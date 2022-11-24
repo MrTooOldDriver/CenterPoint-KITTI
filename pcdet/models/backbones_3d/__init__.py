@@ -2,6 +2,7 @@ from .pointnet2_backbone import PointNet2Backbone, PointNet2MSG
 from .spconv_backbone import VoxelBackBone8x, VoxelResBackBone8x
 from .spconv_unet import UNetV2
 from .IASSD_backbone import IASSD_Backbone
+from .IASSD_backbone_DLP import IASSD_Backbone_DLP
 # from .multi_IASSD_backbone import multi_IASSD_Backbone
 from .ThreeDSSD_backbone import SSDBackbone
 from .RaDet_backbone import RaDetBackbone, RaDetBackbonev2
@@ -12,6 +13,7 @@ __all__ = {
     'PointNet2MSG': PointNet2MSG,
     'VoxelResBackBone8x': VoxelResBackBone8x,
     'IASSD_Backbone': IASSD_Backbone,
+    'IASSD_Backbone_DLP': IASSD_Backbone_DLP,
     # 'multi_IASSD_Backbone': multi_IASSD_Backbone,
     'SSDBackbone': SSDBackbone,
     'RaDetBackbone': RaDetBackbone,

@@ -1,9 +1,7 @@
-nvidia-docker run -it --rm --ipc=host \
-    -v /mnt/sda1/hantao:/root/hantao \
-    -p 7894:22 \
-    -v /mnt/12T:/root/data \
-    -v /mnt/12T:/mnt/12T \
+docker run -it --rm --ipc=host \
+    -v /home/ivan:/root/hantao \
+    -p 7947:22 \
+    -v /mnt/data:/mnt/data \
     --gpus all\
-    --cpuset-cpus "27-31" \
     --name centerpoint-hantao \
     torch:centerpoint-hantao

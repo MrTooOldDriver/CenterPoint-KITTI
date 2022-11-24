@@ -6,7 +6,7 @@ import torch.nn as nn
 from ...ops.pointnet2.pointnet2_batch import pointnet2_modules
 import os
 
-class IASSD_Backbone(nn.Module):
+class IASSD_Backbone_DLP(nn.Module):
     """ Backbone for IA-SSD"""
 
     def __init__(self, model_cfg, input_channels, **kwargs):
@@ -28,6 +28,11 @@ class IASSD_Backbone(nn.Module):
         self.aggregation_mlps = sa_config.get('AGGREGATION_MLPS', None)
         self.confidence_mlps = sa_config.get('CONFIDENCE_MLPS', None)
         self.max_translate_range = sa_config.get('MAX_TRANSLATE_RANGE', None)
+
+        # pondernet
+        self.halting_lambda_layer1 = nn.Linear(512,1)
+        self.halting_lambda_layer2 = nn.Linear(256,1)
+        self.halting_max_step = 2
 
         # =====================================================
         # add options in backbone configuration, a path to save 
@@ -146,9 +151,17 @@ class IASSD_Backbone(nn.Module):
 
         encoder_xyz, encoder_features, sa_ins_preds = [xyz], [features], []
         encoder_coords = [torch.cat([batch_idx.view(batch_size, -1, 1), xyz], dim=-1)]
+        encoder_li_cls_pred = []
 
+        # halting related
+        halting_p = []
+
+        # execute the 0,1,2 SA layers
+        li_cls_pred_temp = []
         li_cls_pred = None
-        for i in range(len(self.SA_modules)):
+        for i in [0,1,2]:
+            # print('SA now in layer for early feature obtain', i)
+            # print('getting intput from layer', self.layer_inputs[i])
             xyz_input = encoder_xyz[self.layer_inputs[i]]
             feature_input = encoder_features[self.layer_inputs[i]]
 
@@ -172,28 +185,46 @@ class IASSD_Backbone(nn.Module):
                 # construct a saving path for different layer
 
                 li_xyz, li_features, li_cls_pred = self.SA_modules[i](xyz_input, feature_input, li_cls_pred, ctr_xyz=ctr_xyz, save_features_dir=save_path, frame_id=batch_dict['frame_id'][0])
-                print('index i=', i)
-                print('feature_input.shape:', feature_input.shape)
-                print('li_xyz.shape: ', li_xyz.shape)
-                print('li_features.shape: ', li_features.shape)
-                print('li_cls_pred.shape: ', li_cls_pred.shape) if li_cls_pred is not None else None
+                
+                # halting realted
+                if i == self.halting_max_step:
+                    lambda_n = li_features.new_ones(batch_size)
+                else:
+                    if i == 0:
+                        # vectors to save intermediate values
+                        un_halted_prob = li_features.new_ones((batch_size,))  # unhalted probability till step n
+                        halting_step = li_features.new_zeros((batch_size,), dtype=torch.long)  # stopping step
+                    # print(li_features.shape)
+                    # print(li_xyz.shape)
+                    lambda_n = self.halting_lambda_layer1(li_features)  # (B, C, 1)
+                    # print('lambda_n.shape', lambda_n.shape)
+                    lambda_n = lambda_n.squeeze(-1)  # (B, C)
+                    # print('lambda_n.shape', lambda_n.shape)
+                    lambda_n = self.halting_lambda_layer2(lambda_n)
+                    # print('lambda_n.shape', lambda_n.shape)
+                    lambda_n = torch.sigmoid(lambda_n).squeeze()
+                    # print('lambda_n.shape', lambda_n.shape)
+                p_n = un_halted_prob * lambda_n
+                halting_p.append(p_n)
+                # calculate halting step
+                halting_step = torch.maximum(
+                    i
+                    * (halting_step == 0)
+                    * torch.bernoulli(lambda_n).to(torch.long),
+                    halting_step)
+                # track unhalted probability and flip coin to halt
+                un_halted_prob = un_halted_prob * (1 - lambda_n)
+                # break if we are in inference and all elements have halting_step
+                if not self.training and (halting_step > 0).sum() == batch_size:
+                    # print('Stop Eearly at layer', i ,'! halting_step=', halting_step)
+                    break
 
-            elif self.layer_types[i] == 'Vote_Layer': #i=4
-                print(feature_input.shape)
-                li_xyz, li_features, xyz_select, ctr_offsets = self.SA_modules[i](xyz_input, feature_input)
-                centers = li_xyz
-                centers_origin = xyz_select
-                center_origin_batch_idx = batch_idx.view(batch_size, -1)[:, :centers_origin.shape[1]]
-                encoder_coords.append(torch.cat([center_origin_batch_idx[..., None].float(),centers_origin.view(batch_size, -1, 3)],dim =-1))
-            elif self.layer_types[i] == 'PCT_Layer': # final layer
-                ctr_xyz = encoder_xyz[self.ctr_idx_list[i]] if self.ctr_idx_list[i] != -1 else None
-                li_xyz, li_features = self.SA_modules[i](xyz_input, feature_input, ctr_xyz)
-                li_cls_pred = None
             if torch.isnan(li_xyz).sum() > 0:
                 raise RuntimeError('Nan in li_xyz!')
             encoder_xyz.append(li_xyz)
             li_batch_idx = batch_idx.view(batch_size, -1)[:, :li_xyz.shape[1]]
             encoder_coords.append(torch.cat([li_batch_idx[..., None].float(),li_xyz.view(batch_size, -1, 3)],dim =-1))
+            # print('adding layer', i, 'to li_features.shape' , li_features.shape)
             encoder_features.append(li_features)            
             if li_cls_pred is not None:
                 li_cls_batch_idx = batch_idx.view(batch_size, -1)[:, :li_cls_pred.shape[1]]
@@ -201,27 +232,111 @@ class IASSD_Backbone(nn.Module):
                 pass
             else:
                 sa_ins_preds.append([])
-           
-        ctr_batch_idx = batch_idx.view(batch_size, -1)[:, :li_xyz.shape[1]]
-        ctr_batch_idx = ctr_batch_idx.contiguous().view(-1)
-        batch_dict['ctr_offsets'] = torch.cat((ctr_batch_idx[:, None].float(), ctr_offsets.contiguous().view(-1, 3)), dim=1)
-        batch_dict['centers'] = torch.cat((ctr_batch_idx[:, None].float(), centers.contiguous().view(-1, 3)), dim=1)
-        batch_dict['centers_origin'] = torch.cat((ctr_batch_idx[:, None].float(), centers_origin.contiguous().view(-1, 3)), dim=1)
-        batch_dict['ctr_batch_idx'] = ctr_batch_idx
-        
-        center_features = encoder_features[-1].permute(0, 2, 1).contiguous().view(-1, encoder_features[-1].shape[1]) # shape?
-        batch_dict['centers_features'] = center_features
+            li_cls_pred_temp.append(li_cls_pred)
 
-        # check encoder xyzs
-        if torch.isnan(centers).sum() > 0:
-            raise RuntimeError('Nan in centers!')
+        # print('Early feature obtain done')
+        # import ipdb; ipdb.set_trace()
+        if self.training: 
+            post_sa_list = [0,1,2]
+        else:
+            post_sa_list = [p for p in range(halting_step.cpu().numpy().max())]
+            while len(encoder_xyz) != 4:
+                encoder_xyz.append(None)
+                encoder_features.append(None)
+                sa_ins_preds.append([])
+                encoder_coords.append(None)
+                li_cls_pred_temp.append(None)
+        for j in post_sa_list:
+            # print('Skipping calculation started. Started from ', j)
+
+            li_cls_pred = li_cls_pred_temp[j]
+            for i in range(len(self.SA_modules)):
+                if i in [0,1,2]:
+                    # skip the first 3 SA layers
+                    continue
+                # print('Overall exectuion now in layer', i)
+                # import ipdb; ipdb.set_trace()
+                if self.layer_inputs[i] is 3:
+                    # print('redirecting to input layer', j)
+                    xyz_input = encoder_xyz[j+1]
+                    feature_input = encoder_features[j+1]
+                else:
+                    xyz_input = encoder_xyz[self.layer_inputs[i]]
+                    feature_input = encoder_features[self.layer_inputs[i]]
+
+                if self.layer_types[i] == 'SA_Layer':
+                    ctr_xyz = encoder_xyz[self.ctr_idx_list[i]] if self.ctr_idx_list[i] != -1 else None
+                    # =====================================================
+                    # input parameter during the SA_Layer forward to save intermediate points
+                    # =====================================================
+                    if self.training:
+                        save_path = None
+                    elif self.save_features_dir is None:
+                        save_path = None
+                    else:
+                        from pathlib import Path
+                        layer_name = 'Layer_' + str(i)
+                        save_path = Path(self.save_features_dir) / layer_name
+                        
+                        save_path = str(save_path)
+                        if not os.path.exists(save_path):
+                            os.mkdir(save_path)
+                    # construct a saving path for different layer
+
+                    li_xyz, li_features, li_cls_pred = self.SA_modules[i](xyz_input, feature_input, li_cls_pred, ctr_xyz=ctr_xyz, save_features_dir=save_path, frame_id=batch_dict['frame_id'][0])
+                    # print('index i=', i)
+                    # print('feature_input.shape:', feature_input.shape)
+                    # print('li_xyz.shape: ', li_xyz.shape)
+                    # print('li_features.shape: ', li_features.shape)
+                    # print('li_cls_pred.shape: ', li_cls_pred.shape) if li_cls_pred is not None else None
+
+                elif self.layer_types[i] == 'Vote_Layer': #i=4
+                    # print(feature_input.shape)
+                    li_xyz, li_features, xyz_select, ctr_offsets = self.SA_modules[i](xyz_input, feature_input)
+                    centers = li_xyz
+                    centers_origin = xyz_select
+                    center_origin_batch_idx = batch_idx.view(batch_size, -1)[:, :centers_origin.shape[1]]
+                    encoder_coords.append(torch.cat([center_origin_batch_idx[..., None].float(),centers_origin.view(batch_size, -1, 3)],dim =-1))
+                elif self.layer_types[i] == 'PCT_Layer': # final layer
+                    ctr_xyz = encoder_xyz[self.ctr_idx_list[i]] if self.ctr_idx_list[i] != -1 else None
+                    li_xyz, li_features = self.SA_modules[i](xyz_input, feature_input, ctr_xyz)
+                    li_cls_pred = None
+                if torch.isnan(li_xyz).sum() > 0:
+                    raise RuntimeError('Nan in li_xyz!')
+                encoder_xyz.append(li_xyz)
+                li_batch_idx = batch_idx.view(batch_size, -1)[:, :li_xyz.shape[1]]
+                encoder_coords.append(torch.cat([li_batch_idx[..., None].float(),li_xyz.view(batch_size, -1, 3)],dim =-1))
+                # print('adding layer', i, 'to li_features.shape' , li_features.shape)
+                encoder_features.append(li_features)            
+                if li_cls_pred is not None:
+                    li_cls_batch_idx = batch_idx.view(batch_size, -1)[:, :li_cls_pred.shape[1]]
+                    sa_ins_preds.append(torch.cat([li_cls_batch_idx[..., None].float(),li_cls_pred.view(batch_size, -1, li_cls_pred.shape[-1])],dim =-1)) 
+                    pass
+                else:
+                    sa_ins_preds.append([])
+            
+            ctr_batch_idx = batch_idx.view(batch_size, -1)[:, :li_xyz.shape[1]]
+            ctr_batch_idx = ctr_batch_idx.contiguous().view(-1)
+            batch_dict['%s_ctr_offsets' % j] = torch.cat((ctr_batch_idx[:, None].float(), ctr_offsets.contiguous().view(-1, 3)), dim=1)
+            batch_dict['%s_centers'% j] = torch.cat((ctr_batch_idx[:, None].float(), centers.contiguous().view(-1, 3)), dim=1)
+            batch_dict['%s_centers_origin'% j] = torch.cat((ctr_batch_idx[:, None].float(), centers_origin.contiguous().view(-1, 3)), dim=1)
+            batch_dict['%s_ctr_batch_idx'% j] = ctr_batch_idx
+            
+            center_features = encoder_features[-1].permute(0, 2, 1).contiguous().view(-1, encoder_features[-1].shape[1]) # shape?
+            batch_dict['%s_centers_features'% j] = center_features
+
+            # check encoder xyzs
+            if torch.isnan(centers).sum() > 0:
+                raise RuntimeError('Nan in centers!')
+
+            batch_dict['%s_encoder_xyz'% j] = encoder_xyz
+            batch_dict['%s_encoder_coords'% j] = encoder_coords
+            batch_dict['%s_sa_ins_preds'% j] = sa_ins_preds
+            batch_dict['%s_encoder_features'% j] = encoder_features # not used later?
 
 
-        batch_dict['encoder_xyz'] = encoder_xyz
-        batch_dict['encoder_coords'] = encoder_coords
-        batch_dict['sa_ins_preds'] = sa_ins_preds
-        batch_dict['encoder_features'] = encoder_features # not used later?
-        
+        batch_dict['halting_p'] = torch.stack(halting_p)
+        batch_dict['halting_step'] = halting_step
         
         ###save per frame 
         # if self.model_cfg.SA_CONFIG.get('SAVE_SAMPLE_LIST',False) and not self.training:  

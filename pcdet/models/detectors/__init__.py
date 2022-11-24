@@ -7,6 +7,7 @@ from .second_net import SECONDNet
 from .centerpoint import CenterPoint 
 from .centerpoint_rcnn import CenterPointRCNN
 from .IASSD import IASSD
+from .IASSD_DLP import IASSD_DLP
 from .detectorX_template import DetectorX_template
 from .IASSD_X import IASSD_X
 from .IASSD_GAN import IASSD_GAN
@@ -28,6 +29,7 @@ __all__ = {
     # 'IASSDX': IASSD_X,
     'IASSDGAN': IASSD_GAN,
     # 'IASSDGAN_clean': IASSD_GAN_clean,
+    'IASSD_DLP': IASSD_DLP,
     '3DSSD': Point3DSSD,
     'RaDet': RaDet
 }
