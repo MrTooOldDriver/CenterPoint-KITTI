@@ -172,14 +172,14 @@ class IASSD_Backbone(nn.Module):
                 # construct a saving path for different layer
 
                 li_xyz, li_features, li_cls_pred = self.SA_modules[i](xyz_input, feature_input, li_cls_pred, ctr_xyz=ctr_xyz, save_features_dir=save_path, frame_id=batch_dict['frame_id'][0])
-                print('index i=', i)
-                print('feature_input.shape:', feature_input.shape)
-                print('li_xyz.shape: ', li_xyz.shape)
-                print('li_features.shape: ', li_features.shape)
-                print('li_cls_pred.shape: ', li_cls_pred.shape) if li_cls_pred is not None else None
+                # print('index i=', i)
+                # print('feature_input.shape:', feature_input.shape)
+                # print('li_xyz.shape: ', li_xyz.shape)
+                # print('li_features.shape: ', li_features.shape)
+                # print('li_cls_pred.shape: ', li_cls_pred.shape) if li_cls_pred is not None else None
 
             elif self.layer_types[i] == 'Vote_Layer': #i=4
-                print(feature_input.shape)
+                # print(feature_input.shape)
                 li_xyz, li_features, xyz_select, ctr_offsets = self.SA_modules[i](xyz_input, feature_input)
                 centers = li_xyz
                 centers_origin = xyz_select

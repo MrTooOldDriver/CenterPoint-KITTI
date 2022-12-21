@@ -27,7 +27,7 @@ MODEL:
         NAME: IASSD_Backbone_DLP
         SA_CONFIG:
             # Sampling setting:
-            NPOINT_LIST: [[512], [512], [512], [256], [-1], [256]]
+            NPOINT_LIST: [[2048], [2048], [2048], [512], [-1], [512]]
             SAMPLE_RANGE_LIST: [[-1], [-1], [-1], [-1], [-1], [-1]]
             SAMPLE_METHOD_LIST: &sample_method_list [['D-FPS'], ['D-FPS'], ['ctr_aware'], ['ctr_aware'], [], []]
             # Group and Abstraction setting:

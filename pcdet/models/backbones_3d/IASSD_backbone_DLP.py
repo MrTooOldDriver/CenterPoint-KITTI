@@ -30,9 +30,11 @@ class IASSD_Backbone_DLP(nn.Module):
         self.max_translate_range = sa_config.get('MAX_TRANSLATE_RANGE', None)
 
         # pondernet
-        self.halting_lambda_layer1 = nn.Linear(512,1)
+        self.halting_lambda_layer1 = nn.Linear(2048,1)
         self.halting_lambda_layer2 = nn.Linear(256,1)
         self.halting_max_step = 2
+
+        self.stop_layer_info = [0,0,0]
 
         # =====================================================
         # add options in backbone configuration, a path to save 
@@ -216,7 +218,9 @@ class IASSD_Backbone_DLP(nn.Module):
                 un_halted_prob = un_halted_prob * (1 - lambda_n)
                 # break if we are in inference and all elements have halting_step
                 if not self.training and (halting_step > 0).sum() == batch_size:
-                    # print('Stop Eearly at layer', i ,'! halting_step=', halting_step)
+                    # import ipdb; ipdb.set_trace();
+                    self.stop_layer_info[i] = self.stop_layer_info[i] + 1
+                    print('Frame', batch_dict['frame_id'][0] ,'Stop Eearly at layer', i ,'! halting_step=', halting_step, 'stop_layer_info=', self.stop_layer_info)
                     break
 
             if torch.isnan(li_xyz).sum() > 0:
