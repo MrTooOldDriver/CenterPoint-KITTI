@@ -109,5 +109,7 @@ class DataAugmentor(object):
             gt_boxes_mask = data_dict['gt_boxes_mask']
             data_dict['gt_boxes'] = data_dict['gt_boxes'][gt_boxes_mask]
             data_dict['gt_names'] = data_dict['gt_names'][gt_boxes_mask]
+            if 'gt_boxes_vel' in data_dict:
+                data_dict['gt_boxes_vel'] = data_dict['gt_boxes_vel'][gt_boxes_mask]
             data_dict.pop('gt_boxes_mask')
         return data_dict

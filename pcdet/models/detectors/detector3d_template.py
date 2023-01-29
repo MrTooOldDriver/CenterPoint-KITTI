@@ -274,6 +274,12 @@ class Detector3DTemplate(nn.Module):
                 if not batch_dict['cls_preds_normalized']:
                     cls_preds = [torch.sigmoid(x) for x in cls_preds]
 
+            if batch_dict.get('batch_vel_preds', None) is not None:
+                vel_preds = batch_dict['batch_vel_preds'][batch_mask]
+                src_vel_preds = vel_preds
+            else:
+                src_vel_preds = None
+
             if post_process_cfg.NMS_CONFIG.MULTI_CLASSES_NMS:
                 if not isinstance(cls_preds, list):
                     cls_preds = [cls_preds]
@@ -320,6 +326,10 @@ class Detector3DTemplate(nn.Module):
                 final_scores = selected_scores
                 final_labels = label_preds[selected]
                 final_boxes = box_preds[selected]
+                if src_vel_preds is not None:
+                    final_vels = vel_preds[selected]
+                else:
+                    final_vels = None
 
             recall_dict = self.generate_recall_record(
                 box_preds=final_boxes if 'rois' not in batch_dict else src_box_preds,
@@ -330,7 +340,8 @@ class Detector3DTemplate(nn.Module):
             record_dict = {
                 'pred_boxes': final_boxes,
                 'pred_scores': final_scores,
-                'pred_labels': final_labels
+                'pred_labels': final_labels,
+                'pred_vels': final_vels
             }
             pred_dicts.append(record_dict)
 

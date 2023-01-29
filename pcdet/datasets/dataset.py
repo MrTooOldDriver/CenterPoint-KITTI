@@ -140,6 +140,8 @@ class DatasetTemplate(torch_data.Dataset):
             gt_classes = np.array([self.class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
             gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
             data_dict['gt_boxes'] = gt_boxes
+            if data_dict.get('gt_boxes_vel', None) is not None:
+                data_dict['gt_boxes_vel'] = data_dict['gt_boxes_vel'][selected]
 
         data_dict = self.point_feature_encoder.forward(data_dict)
         data_dict = self.data_processor.forward(
@@ -181,6 +183,12 @@ class DatasetTemplate(torch_data.Dataset):
                     for k in range(batch_size):
                         batch_gt_boxes3d[k, :val[k].__len__(), :] = val[k]
                     ret[key] = batch_gt_boxes3d
+                elif key in ['gt_boxes_vel']:
+                    max_gt = max([len(x) for x in val])
+                    batch_gt_boxes3d_vel = np.zeros((batch_size, max_gt, val[0].shape[-1]), dtype=np.float32)
+                    for k in range(batch_size):
+                        batch_gt_boxes3d_vel[k, :val[k].__len__(), :] = val[k]
+                    ret[key] = batch_gt_boxes3d_vel
                 else:
                     ret[key] = np.stack(val, axis=0)
             except:
