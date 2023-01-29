@@ -239,6 +239,10 @@ class KittiDataset(DatasetTemplate):
                 gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, -(np.pi / 2 + rots[..., np.newaxis])], axis=1)
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
 
+                if self.dataset_cfg.MOVING_OBJECT_ONLY:
+                    # print('*************   only generate moving object infos  *************')
+                    annotations = common_utils.drop_static_objects(annotations)
+
                 info['annos'] = annotations
 
                 if count_inside_pts:
@@ -263,6 +267,7 @@ class KittiDataset(DatasetTemplate):
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
         with futures.ThreadPoolExecutor(num_workers) as executor:
             infos = executor.map(process_single_scene, sample_id_list)
+        # process_single_scene(sample_id_list[0])
         return list(infos)
 
     def create_groundtruth_database(self, info_path=None, used_classes=None, split='train'):
@@ -411,12 +416,14 @@ class KittiDataset(DatasetTemplate):
 
         final_evaluation = dict()
         self.logger.info('*************   using vod official evaluation script   *************')
+        if self.dataset_cfg.MOVING_OBJECT_ONLY:
+            self.logger.info('*************   only evaluate moving object   *************')
         vod_evaluation_result = {}
         vod_evaluation_result.update(
-            vod_eval.get_official_eval_result(eval_gt_annos, eval_det_annos, class_names, is_radar=self.is_radar))
+            vod_eval.get_official_eval_result(eval_gt_annos, eval_det_annos, class_names, is_radar=self.is_radar, moving_object_only=self.dataset_cfg.MOVING_OBJECT_ONLY))
         vod_evaluation_result.update(
             vod_eval.get_official_eval_result(eval_gt_annos, eval_det_annos, class_names, custom_method=3,
-                                                is_radar=self.is_radar))
+                                                is_radar=self.is_radar, moving_object_only=self.dataset_cfg.MOVING_OBJECT_ONLY))
         final_evaluation['vod_eval'] = vod_evaluation_result
         self.logger.info('*************   using pcdet official evaluation script   *************')
         kitti_evaluation_result = {}
@@ -486,6 +493,8 @@ class KittiDataset(DatasetTemplate):
         if 'annos' in info:
             annos = info['annos']
             annos = common_utils.drop_info_with_name(annos, name='DontCare')
+            if self.dataset_cfg.MOVING_OBJECT_ONLY:
+                annos = common_utils.drop_static_objects(annos)
             loc, dims, rots = annos['location'], annos['dimensions'], annos['rotation_y']
             gt_names = annos['name']
             gt_boxes_camera = np.concatenate([loc, dims, rots[..., np.newaxis]], axis=1).astype(np.float32)

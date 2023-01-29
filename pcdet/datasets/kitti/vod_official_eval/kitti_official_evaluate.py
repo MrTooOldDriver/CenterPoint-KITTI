@@ -30,7 +30,7 @@ def get_thresholds(scores: np.ndarray, num_gt,
     return thresholds
 
 
-def clean_data(gt_anno, dt_anno, current_class, difficulty, roi_clean=False):  # per frame
+def clean_data(gt_anno, dt_anno, current_class, difficulty, roi_clean=False, moving_object_only=False):  # per frame
     valid_class_names = ['car', 'pedestrian', 'cyclist', 'van', 'person_sitting', 'truck']
     min_instance_height = [40]
     max_instance_occlusion = [4]
@@ -67,6 +67,10 @@ def clean_data(gt_anno, dt_anno, current_class, difficulty, roi_clean=False):  #
         if ((gt_anno["occluded"][i] > max_instance_occlusion[difficulty])
                 or (height <= min_instance_height[difficulty])):
             ignore = True
+
+        if moving_object_only:
+            if int(gt_anno["truncated"][i]) == 0:
+                ignore = True
 
         # ignore gts with centers outside the lane or farther than 25m
         # this is called "Driving Corridor" in the paper, but addressed a roi (region of interest) here
@@ -468,7 +472,7 @@ def calculate_iou_partly(gt_annotations, dt_annotations, metric, num_parts=50):
     return overlaps, parted_overlaps, total_gt_num, total_dt_num
 
 
-def _prepare_data(gt_annotations, dt_annotations, current_class, difficulty, custom_method=0):
+def _prepare_data(gt_annotations, dt_annotations, current_class, difficulty, custom_method=0, moving_object_only=False):
     gt_datas_list = []
     dt_datas_list = []
     total_dc_num = []
@@ -476,10 +480,10 @@ def _prepare_data(gt_annotations, dt_annotations, current_class, difficulty, cus
     total_num_valid_gt = 0
     for i in range(len(gt_annotations)):
         if custom_method == 0:  # default results
-            rets = clean_data(gt_annotations[i], dt_annotations[i], current_class, difficulty)
+            rets = clean_data(gt_annotations[i], dt_annotations[i], current_class, difficulty, moving_object_only=moving_object_only)
 
         if custom_method == 3:  # results in the ROI
-            rets = clean_data(gt_annotations[i], dt_annotations[i], current_class, difficulty, roi_clean=True)
+            rets = clean_data(gt_annotations[i], dt_annotations[i], current_class, difficulty, roi_clean=True, moving_object_only=moving_object_only)
 
         num_valid_gt, ignored_gt, ignored_det, dc_bboxes = rets
         ignored_gts.append(np.array(ignored_gt, dtype=np.int64))
@@ -512,7 +516,8 @@ def eval_class(gt_annotations,
                min_overlaps,
                compute_aos=False,
                num_parts=50,
-               custom_method=0):
+               custom_method=0,
+               moving_object_only=False):
     """Kitti eval. support 2d/bev/3d/aos eval. support 0.5:0.05:0.95 coco AP.
     Args:
         gt_annotations: dict, must from get_label_annotations() in evaluation_common.py
@@ -546,7 +551,7 @@ def eval_class(gt_annotations,
 
     for m, current_class in enumerate(current_classes):
         for l, difficulty in enumerate(difficulties):
-            rets = _prepare_data(gt_annotations, dt_annotations, current_class, difficulty, custom_method=custom_method)
+            rets = _prepare_data(gt_annotations, dt_annotations, current_class, difficulty, custom_method=custom_method, moving_object_only=moving_object_only)
             (gt_datas_list, dt_datas_list, ignored_gts, ignored_dets,
              dontcares, total_dc_num, total_num_valid_gt) = rets
 
@@ -632,7 +637,8 @@ def do_eval(gt_annotations,
             min_overlaps,
             compute_aos=False,
             pr_detail_dict=None,
-            custom_method=0):
+            custom_method=0,
+            moving_object_only=False):
     if custom_method == 0:  # normal metric
         difficulties = [0]
 
@@ -646,7 +652,7 @@ def do_eval(gt_annotations,
         difficulties = [0]
 
     ret = eval_class(gt_annotations, dt_annotations, current_classes, difficulties, 0,
-                     min_overlaps, compute_aos, custom_method=custom_method)
+                     min_overlaps, compute_aos, custom_method=custom_method, moving_object_only=moving_object_only)
 
     print("mAP Image BBox finished")
     mAP_bbox = get_m_ap(ret["precision"])
@@ -664,7 +670,7 @@ def do_eval(gt_annotations,
             pr_detail_dict['aos'] = ret['orientation']
 
     ret = eval_class(gt_annotations, dt_annotations, current_classes, difficulties, 1,
-                     min_overlaps, custom_method=custom_method)
+                     min_overlaps, custom_method=custom_method, moving_object_only=moving_object_only)
     print("mAP bev BBox finished")
     mAP_bev = get_m_ap(ret["precision"])
     mAP_bev_R40 = get_m_ap_r40(ret["precision"])
@@ -673,7 +679,7 @@ def do_eval(gt_annotations,
         pr_detail_dict['bev'] = ret['precision']
 
     ret = eval_class(gt_annotations, dt_annotations, current_classes, difficulties, 2,
-                     min_overlaps, custom_method=custom_method)
+                     min_overlaps, custom_method=custom_method, moving_object_only=moving_object_only)
     print("mAP 3D BBox finished")
     mAP_3d = get_m_ap(ret["precision"])
     mAP_3d_R40 = get_m_ap_r40(ret["precision"])
@@ -682,7 +688,7 @@ def do_eval(gt_annotations,
     return mAP_bbox, mAP_bev, mAP_3d, mAP_aos, mAP_bbox_R40, mAP_bev_R40, mAP_3d_R40, mAP_aos_R40
 
 
-def get_official_eval_result(gt_annotations, dt_annotations, current_classes, pr_detail_dict=None, custom_method=0, is_radar=False):
+def get_official_eval_result(gt_annotations, dt_annotations, current_classes, pr_detail_dict=None, custom_method=0, is_radar=False, moving_object_only=False):
     if custom_method == 0:
         print("Evaluating kitti by default")
     elif custom_method == 3:
@@ -741,7 +747,7 @@ def get_official_eval_result(gt_annotations, dt_annotations, current_classes, pr
 
     mAPbbox, mAPbev, mAP3d, mAPaos, mAPbbox_R40, mAPbev_R40, mAP3d_R40, mAPaos_R40 = do_eval(
         gt_annotations, dt_annotations, current_classes, min_overlaps, compute_aos, pr_detail_dict=pr_detail_dict,
-        custom_method=custom_method)
+        custom_method=custom_method, moving_object_only=moving_object_only)
 
     ret_dict = {}
     for j, curcls in enumerate(current_classes):
