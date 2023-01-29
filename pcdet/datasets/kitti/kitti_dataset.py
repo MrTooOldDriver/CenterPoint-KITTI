@@ -38,6 +38,7 @@ class KittiDataset(DatasetTemplate):
         self.is_radar = dataset_cfg.get('IS_RADAR', False)
         # self.is_radar = False
         self.debug = dataset_cfg.get('DEBUG', False)
+        self.use_vel = dataset_cfg.get('USE_VEL', False)
         # modified for trans-ssd
         self.use_attach = self.dataset_cfg.get('USE_ATTACH', False)
         self.attach_root = self.dataset_cfg.get('ATTACH_ROOT', None) if self.use_attach else None
@@ -224,6 +225,10 @@ class KittiDataset(DatasetTemplate):
                 annotations['rotation_y'] = np.array([obj.ry for obj in obj_list])
                 annotations['score'] = np.array([obj.score for obj in obj_list])
                 annotations['difficulty'] = np.array([obj.level for obj in obj_list], np.int32)
+                if self.use_vel:
+                    annotations['v_x'] = np.array([obj.v_x for obj in obj_list])
+                    annotations['v_y'] = np.array([obj.v_y for obj in obj_list])
+                    annotations['v_z'] = np.array([obj.v_z for obj in obj_list])
 
                 num_objects = len([obj.cls_type for obj in obj_list if obj.cls_type != 'DontCare'])
                 num_gt = len(annotations['name'])
@@ -236,6 +241,11 @@ class KittiDataset(DatasetTemplate):
                 loc_lidar = calib.rect_to_lidar(loc)
                 l, h, w = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
                 loc_lidar[:, 2] += h[:, 0] / 2
+                if self.use_vel:
+                    v_x = annotations['v_x'][:num_objects]
+                    v_y = annotations['v_y'][:num_objects]
+                    gt_boxes_lidar_with_vel = np.concatenate([loc_lidar, l, w, h, -(np.pi / 2 + rots[..., np.newaxis]), v_x[..., np.newaxis], v_y[..., np.newaxis]], axis=1)
+                    annotations['gt_boxes_lidar_with_vel'] = gt_boxes_lidar_with_vel
                 gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, -(np.pi / 2 + rots[..., np.newaxis])], axis=1)
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
 
@@ -345,7 +355,8 @@ class KittiDataset(DatasetTemplate):
                 'occluded': np.zeros(num_samples), 'alpha': np.zeros(num_samples),
                 'bbox': np.zeros([num_samples, 4]), 'dimensions': np.zeros([num_samples, 3]),
                 'location': np.zeros([num_samples, 3]), 'rotation_y': np.zeros(num_samples),
-                'score': np.zeros(num_samples), 'boxes_lidar': np.zeros([num_samples, 7])
+                'score': np.zeros(num_samples), 'boxes_lidar': np.zeros([num_samples, 7]),
+                'vels':np.zeros([num_samples, 2]),
             }
             return ret_dict
 
@@ -353,6 +364,8 @@ class KittiDataset(DatasetTemplate):
             pred_scores = box_dict['pred_scores'].cpu().numpy()
             pred_boxes = box_dict['pred_boxes'].cpu().numpy()
             pred_labels = box_dict['pred_labels'].cpu().numpy()
+            if box_dict['pred_vels'] is not None:
+                pred_vels = box_dict['pred_vels'].cpu().numpy()
             pred_dict = get_template_prediction(pred_scores.shape[0])
             if pred_scores.shape[0] == 0:
                 return pred_dict
@@ -372,7 +385,8 @@ class KittiDataset(DatasetTemplate):
             pred_dict['rotation_y'] = pred_boxes_camera[:, 6]
             pred_dict['score'] = pred_scores
             pred_dict['boxes_lidar'] = pred_boxes
-
+            if box_dict['pred_vels'] is not None:
+                pred_dict['vels'] = pred_vels
             return pred_dict
 
         annos = []
@@ -395,12 +409,21 @@ class KittiDataset(DatasetTemplate):
                     dims = single_pred_dict['dimensions']  # lhw -> hwl
 
                     for idx in range(len(bbox)):
-                        print('%s -1 -1 %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f'
-                              % (single_pred_dict['name'][idx], single_pred_dict['alpha'][idx],
-                                 bbox[idx][0], bbox[idx][1], bbox[idx][2], bbox[idx][3],
-                                 dims[idx][1], dims[idx][2], dims[idx][0], loc[idx][0],
-                                 loc[idx][1], loc[idx][2], single_pred_dict['rotation_y'][idx],
-                                 single_pred_dict['score'][idx]), file=f)
+                        if 'vels' in single_pred_dict.keys():
+                            print('%s -1 -1 %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f'
+                                % (single_pred_dict['name'][idx], single_pred_dict['alpha'][idx],
+                                    bbox[idx][0], bbox[idx][1], bbox[idx][2], bbox[idx][3],
+                                    dims[idx][1], dims[idx][2], dims[idx][0], loc[idx][0],
+                                    loc[idx][1], loc[idx][2], single_pred_dict['rotation_y'][idx],
+                                    single_pred_dict['score'][idx], single_pred_dict['vels'][idx][0], 
+                                    single_pred_dict['vels'][idx][1]), file=f)
+                        else:
+                            print('%s -1 -1 %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f'
+                                % (single_pred_dict['name'][idx], single_pred_dict['alpha'][idx],
+                                    bbox[idx][0], bbox[idx][1], bbox[idx][2], bbox[idx][3],
+                                    dims[idx][1], dims[idx][2], dims[idx][0], loc[idx][0],
+                                    loc[idx][1], loc[idx][2], single_pred_dict['rotation_y'][idx],
+                                    single_pred_dict['score'][idx]), file=f)
 
         return annos
 
@@ -507,6 +530,14 @@ class KittiDataset(DatasetTemplate):
             road_plane = self.get_road_plane(sample_idx)
             if road_plane is not None:
                 input_dict['road_plane'] = road_plane
+                
+            if self.use_vel:
+                v_x = annos['v_x']
+                v_y = annos['v_y']
+                gt_boxes_vel = np.concatenate([v_x[..., np.newaxis], v_y[..., np.newaxis]], axis=1).astype(np.float32)
+                input_dict.update({
+                    'gt_boxes_vel' : gt_boxes_vel
+                })
 
         data_dict = self.prepare_data(data_dict=input_dict)
 

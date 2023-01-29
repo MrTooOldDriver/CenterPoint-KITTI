@@ -34,6 +34,12 @@ class Object3d(object):
         self.score = float(label[15]) if label.__len__() == 16 else -1.0
         self.level_str = None
         self.level = self.get_kitti_obj_level()
+        if len(label) == 19:
+            # det vel info
+            self.has_vel = True
+            self.v_x = float(label[16])
+            self.v_y = float(label[17]) 
+            self.v_z = float(label[18]) 
 
     def get_kitti_obj_level(self):
         height = float(self.box2d[3]) - float(self.box2d[1]) + 1
