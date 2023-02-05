@@ -21,3 +21,6 @@ draft
 output*
 vod_vis
 test_vid
+# vod stuff
+tools/vod_center_tracking/clips*
+tools/vod_center_tracking/out*
