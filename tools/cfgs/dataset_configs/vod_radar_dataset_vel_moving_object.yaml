@@ -20,7 +20,11 @@ IS_RADAR: True
 USE_VOD_EVAL: True
 USE_VEL: True # improtant
 MODALITY: 'radar'
-MOVING_OBJECT_ONLY: False
+MOVING_OBJECT_ONLY: True
+
+TRAIN_LABEL_FILTER: 
+  min_pts: 1
+
 DATA_AUGMENTOR:
     DISABLE_AUG_LIST: ['random_world_rotation','gt_sampling']
     AUG_CONFIG_LIST:
