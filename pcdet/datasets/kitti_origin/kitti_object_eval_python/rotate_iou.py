@@ -9,6 +9,12 @@ import numba
 import numpy as np
 from numba import cuda
 
+# Stop performance warning and cuda info
+import logging
+numba_logger = logging.getLogger('numba')
+numba_logger.setLevel(logging.WARNING)  # Or any other desired level that has a value above that of "INFO".
+import warnings
+warnings.simplefilter('ignore', category=numba.NumbaPerformanceWarning)
 
 @numba.jit(nopython=True)
 def div_up(m, n):

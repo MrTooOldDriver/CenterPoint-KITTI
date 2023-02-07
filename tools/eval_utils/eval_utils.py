@@ -344,8 +344,9 @@ def eval_one_epoch(cfg, model, dataloader, epoch_id, logger, dist_test=False, sa
 
     logger.info('*************** Evaluation Summary of EPOCH %s *****************' % epoch_id)
     
-    # log_kitti_result(eval_results, logger, ret_dict)
-    current_epoch_mAP_3d = log_vod_result(eval_results, logger, ret_dict)
+    current_epoch_mAP_3d = log_kitti_original_result(eval_results, logger, ret_dict)
+    # current_epoch_mAP_3d = log_kitti_result(eval_results, logger, ret_dict)
+    # current_epoch_mAP_3d = log_vod_result(eval_results, logger, ret_dict)
     # save gt, prediction, final points origin, final points new coordinate
     
     if save_best_eval and current_epoch_mAP_3d > best_mAP_3d:
@@ -354,9 +355,9 @@ def eval_one_epoch(cfg, model, dataloader, epoch_id, logger, dist_test=False, sa
         save_checkpoint(
             checkpoint_state(model, None, epoch_id, None), filename=ckpt_name,
         )
-        logger.info('>>>>>>> current best mAP_3d result is: <<<<<<<')
-        log_vod_result(eval_results, logger, ret_dict)
-    
+    logger.info('>>>>>>> current best mAP_3d result is: <<<<<<<')
+    logger.info(best_mAP_3d)
+
 
     logger.info('****************Evaluation done.*****************')
     return ret_dict
@@ -371,6 +372,22 @@ def log_kitti_result(eval_results, logger, ret_dict):
                 f"Cyclist: {kitti_evaluation_result['entire_area']['Cyclist_3d_all']} \n"
                 f"mAP: {(kitti_evaluation_result['entire_area']['Car_3d_all'] + kitti_evaluation_result['entire_area']['Pedestrian_3d_all'] + kitti_evaluation_result['entire_area']['Cyclist_3d_all']) / 3}")
     ret_dict['mAP_3d_kitti'] = (kitti_evaluation_result['entire_area']['Car_3d_all'] + kitti_evaluation_result['entire_area']['Pedestrian_3d_all'] + kitti_evaluation_result['entire_area']['Cyclist_3d_all']) / 3
+    return ret_dict['mAP_3d_kitti']
+
+def log_kitti_original_result(eval_results, logger, ret_dict):
+    logger.info('*************   kitti(original) official evaluation script   *************')
+    kitti_evaluation_result = eval_results['kitti_eval_ap_dict']
+    logger.info("Results: \n"
+                f"Car: {kitti_evaluation_result['Car_3d/easy'], kitti_evaluation_result['Car_3d/moderate'], kitti_evaluation_result['Car_3d/hard']} \n"
+                f"Pedestrian: {kitti_evaluation_result['Pedestrian_3d/easy'], kitti_evaluation_result['Pedestrian_3d/moderate'], kitti_evaluation_result['Pedestrian_3d/hard']} \n"
+                f"Cyclist: {kitti_evaluation_result['Cyclist_3d/easy'], kitti_evaluation_result['Cyclist_3d/moderate'], kitti_evaluation_result['Cyclist_3d/hard']} \n")
+
+    mAP = kitti_evaluation_result['Car_3d/easy']+ kitti_evaluation_result['Car_3d/moderate']+ kitti_evaluation_result['Car_3d/hard'] + \
+            kitti_evaluation_result['Pedestrian_3d/easy']+ kitti_evaluation_result['Pedestrian_3d/moderate']+ kitti_evaluation_result['Pedestrian_3d/hard'] + \
+                kitti_evaluation_result['Cyclist_3d/easy']+ kitti_evaluation_result['Cyclist_3d/moderate']+ kitti_evaluation_result['Cyclist_3d/hard']
+    mAP = mAP/9
+    ret_dict['mAP_3d'] = mAP
+    return mAP
 
 def log_vod_result(eval_results, logger, ret_dict):
     logger.info('*************   vod official evaluation script   *************')
