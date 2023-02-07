@@ -377,6 +377,7 @@ def log_kitti_result(eval_results, logger, ret_dict):
 def log_kitti_original_result(eval_results, logger, ret_dict):
     logger.info('*************   kitti(original) official evaluation script   *************')
     kitti_evaluation_result = eval_results['kitti_eval_ap_dict']
+    logger.info(eval_results['kitti_eval_ap_result_str'])
     logger.info("Results: \n"
                 f"Car: {kitti_evaluation_result['Car_3d/easy'], kitti_evaluation_result['Car_3d/moderate'], kitti_evaluation_result['Car_3d/hard']} \n"
                 f"Pedestrian: {kitti_evaluation_result['Pedestrian_3d/easy'], kitti_evaluation_result['Pedestrian_3d/moderate'], kitti_evaluation_result['Pedestrian_3d/hard']} \n"
