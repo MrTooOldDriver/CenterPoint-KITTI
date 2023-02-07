@@ -9,6 +9,7 @@ from .kitti.kitti_dataset import KittiDataset
 from .nuscenes.nuscenes_dataset import NuScenesDataset
 from .inhouse.inhouse_dataset import inHouseDataset
 from .inhouse_new.inhouse_new_dataset import InhouseNewDataset
+from .kitti_origin.kitti_dataset import KittiOriginalDataset
 
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
@@ -16,6 +17,7 @@ __all__ = {
     'NuScenesDataset': NuScenesDataset,
     'inHouseDataset': inHouseDataset,
     'inHouseNewDataset': InhouseNewDataset,
+    'KittiOriginalDataset': KittiOriginalDataset,
 }
 
 
