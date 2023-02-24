@@ -210,7 +210,7 @@ class CenterHeadVel(nn.Module):
         pc_range = torch.tensor(self.point_cloud_range)
         voxel_size = torch.tensor(self.target_cfg.VOXEL_SIZE)
 
-        feature_map_size = grid_size[:2] // self.target_cfg.OUT_SIZE_FACTOR
+        feature_map_size = torch.div(grid_size[:2], self.target_cfg.OUT_SIZE_FACTOR, rounding_mode='floor')
 
         """
         # reorganize the gt_dict by tasks

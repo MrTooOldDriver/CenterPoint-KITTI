@@ -344,19 +344,24 @@ def eval_one_epoch(cfg, model, dataloader, epoch_id, logger, dist_test=False, sa
 
     logger.info('*************** Evaluation Summary of EPOCH %s *****************' % epoch_id)
     
-    current_epoch_mAP_3d = log_kitti_original_result(eval_results, logger, ret_dict)
+    try:
+        current_epoch_mAP_3d = log_kitti_original_result(eval_results, logger, ret_dict)
+    except KeyError:
+        current_epoch_mAP_3d = log_vod_result(eval_results, logger, ret_dict)
     # current_epoch_mAP_3d = log_kitti_result(eval_results, logger, ret_dict)
     # current_epoch_mAP_3d = log_vod_result(eval_results, logger, ret_dict)
     # save gt, prediction, final points origin, final points new coordinate
     
+    logger.info('>>>>>>> current best mAP_3d result is: <<<<<<<')
+    logger.info(best_mAP_3d)
+    
     if save_best_eval and current_epoch_mAP_3d > best_mAP_3d:
         logger.info('>>>>>> Saving best mAP_3d model save to %s <<<<<<' % result_dir)
+        logger.info('new best mAP_3d=%s' % current_epoch_mAP_3d)
         ckpt_name = best_model_output_dir / 'best_epoch_checkpoint'
         save_checkpoint(
             checkpoint_state(model, None, epoch_id, None), filename=ckpt_name,
         )
-    logger.info('>>>>>>> current best mAP_3d result is: <<<<<<<')
-    logger.info(best_mAP_3d)
 
 
     logger.info('****************Evaluation done.*****************')
