@@ -32,10 +32,10 @@ DATA_CONFIG:
         #       WORLD_SCALE_RANGE: [0.95, 1.05]
 
 MODEL:
-    NAME: IASSD
+    NAME: IASSD_DPP
      
     BACKBONE_3D:
-        NAME: IASSD_Backbone
+        NAME: IASSD_Backbone_DPP
         SA_CONFIG:
             # Sampling setting:
             NPOINT_LIST: [[512], [512], [256], [128], [-1], [128]]
@@ -62,8 +62,11 @@ MODEL:
             MAX_TRANSLATE_RANGE: [3.0, 3.0, 2.0]
             # SAVE_SAMPLE_LIST: True
 
+            # DPP SETTING
+            DPP_LAYER: [0, 1, 2, 3]
+
     POINT_HEAD:
-        NAME: IASSD_Head
+        NAME: IASSD_Head_DPP
         CLS_FC: [256, 256]
         REG_FC: [256, 256]
         CLASS_AGNOSTIC: False

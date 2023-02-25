@@ -8,6 +8,7 @@ from .centerpoint import CenterPoint
 from .centerpoint_rcnn import CenterPointRCNN
 from .IASSD import IASSD
 from .IASSD_DLP import IASSD_DLP
+from .IASSD_DPP import IASSD_DPP
 from .detectorX_template import DetectorX_template
 from .IASSD_X import IASSD_X
 from .IASSD_GAN import IASSD_GAN
@@ -26,6 +27,7 @@ __all__ = {
     'CenterPoint': CenterPoint,
     'CenterPointRCNN': CenterPointRCNN,
     'IASSD': IASSD,
+    'IASSD_DPP': IASSD_DPP,
     # 'IASSDX': IASSD_X,
     'IASSDGAN': IASSD_GAN,
     # 'IASSDGAN_clean': IASSD_GAN_clean,

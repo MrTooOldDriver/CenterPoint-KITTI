@@ -8,6 +8,7 @@ from .centerpoint_head_single import CenterHead
 from .centerpoint_head_single_vel import CenterHeadVel
 from .IASSD_head import IASSD_Head
 from .IASSD_head_DLP import IASSD_Head_DLP
+from .IASSD_head_DPP import IASSD_Head_DPP
 from .point_head_box_3DSSD import PointHeadBox3DSSD
 from .RaDet_head import RaDet_Head
 
@@ -22,6 +23,7 @@ __all__ = {
     'CenterHeadVel': CenterHeadVel,
     'IASSD_Head': IASSD_Head,
     'IASSD_Head_DLP': IASSD_Head_DLP,
+    'IASSD_Head_DPP': IASSD_Head_DPP,
     'PointHeadBox3DSSD': PointHeadBox3DSSD,
     'RaDetHead': RaDet_Head,
 }

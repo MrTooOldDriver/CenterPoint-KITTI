@@ -1,8 +1,7 @@
-CLASS_NAMES: ['Car','Pedestrian', 'Cyclist']
-# CLASS_NAMES: ['Car']
+CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
 
 DATA_CONFIG:
-    _BASE_CONFIG_: tools/cfgs/dataset_configs/vod_radar_dataset_iassd_with_aug.yaml
+    _BASE_CONFIG_: cfgs/dataset_configs/kitti_origin_dataset.yaml
 
     DATA_PROCESSOR:
         -   NAME: mask_points_and_boxes_outside_range
@@ -10,8 +9,8 @@ DATA_CONFIG:
 
         -   NAME: sample_points
             NUM_POINTS: {
-                'train': 512, # using waymo config
-                'test': 512
+                'train': 16384,
+                'test': 16384
             }
 
         -   NAME: shuffle_points
@@ -19,26 +18,15 @@ DATA_CONFIG:
                 'train': True,
                 'test': False
             }
-    # DATA_AUGMENTOR:
-    #     DISABLE_AUG_LIST: ['placeholder']
-    #     # - NAME: random_world_flip
-    #     #   ALONG_AXIS_LIST: ['x']
-    #     POINT_FEATURE_ENCODING: {
-    #     encoding_type: absolute_coordinates_encoding,
-    #     used_feature_list: ['x', 'y', 'z', 'RCS', 'v_r_compensated'],
-    #     src_feature_list: ['x', 'y', 'z', 'RCS', 'v_r', 'v_r_compensated', 'time'],
-    #     }
-        #     - NAME: random_world_scaling
-        #       WORLD_SCALE_RANGE: [0.95, 1.05]
 
 MODEL:
-    NAME: IASSD
+    NAME: IASSD_DPP
      
     BACKBONE_3D:
-        NAME: IASSD_Backbone
+        NAME: IASSD_Backbone_DPP
         SA_CONFIG:
             # Sampling setting:
-            NPOINT_LIST: [[512], [512], [256], [128], [-1], [128]]
+            NPOINT_LIST: [[4096], [1024], [512], [256], [-1], [256]]
             SAMPLE_RANGE_LIST: [[-1], [-1], [-1], [-1], [-1], [-1]]
             SAMPLE_METHOD_LIST: &sample_method_list [['D-FPS'], ['D-FPS'], ['ctr_aware'], ['ctr_aware'], [], []]
             # Group and Abstraction setting:
@@ -62,8 +50,12 @@ MODEL:
             MAX_TRANSLATE_RANGE: [3.0, 3.0, 2.0]
             # SAVE_SAMPLE_LIST: True
 
+            # DPP SETTING
+            DPP_LAYER: [0, 1, 2, 3]
+
+
     POINT_HEAD:
-        NAME: IASSD_Head
+        NAME: IASSD_Head_DPP
         CLS_FC: [256, 256]
         REG_FC: [256, 256]
         CLASS_AGNOSTIC: False
@@ -72,11 +64,11 @@ MODEL:
             INS_AWARE_ASSIGN: True
             GT_EXTRA_WIDTH: [0.2, 0.2, 0.2]
            
-            # ASSIGN_METHOD:
-            #     NAME: 'extend_gt'
-            #     ASSIGN_TYPE: 'centers_origin' #'centers'(default) ,  'centers_origin'
-            #     EXTRA_WIDTH: [1.0, 1.0, 1.0]
-            #     FG_PC_IGNORE: False
+            ASSIGN_METHOD:
+                NAME: 'extend_gt'
+                ASSIGN_TYPE: 'centers_origin' #'centers'(default) ,  'centers_origin'
+                EXTRA_WIDTH: [1.0, 1.0, 1.0]
+                FG_PC_IGNORE: False
 
             BOX_CODER: PointResidual_BinOri_Coder # 'PointBinResidualCoder', 'PointResidual_BinOri_Coder' 
             BOX_CODER_CONFIG: {
