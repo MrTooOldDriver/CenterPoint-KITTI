@@ -44,12 +44,12 @@ MODEL:
             # Group and Abstraction setting:
             RADIUS_LIST: [[0.2,0.8], [0.8,1.6], [1.6,4.8], [], [], [4.8, 6.4]]
             NSAMPLE_LIST: [[16,32], [16,32], [16,32], [], [], [16, 32]]            
-            MLPS: [[[16,16,32],  [32,32,64]],
-                   [[64,64,128],  [64,96,128]],
-                   [[128,128,256],  [128,256,256]],
+            MLPS: [[[16,32],  [32,64]],
+                   [[64,128],  [64,128]],
+                   [[128,256],  [128,256]],
                    [],
                    [128],
-                   [[256,256,512], [256,512,1024]]]
+                   [[256,512], [256,1024]]]
             
             LAYER_TYPE: ['SA_Layer', 'SA_Layer', 'SA_Layer', 'SA_Layer', 'Vote_Layer', 'SA_Layer']
             DILATED_GROUP: [False, False, False, False, False, False]            
@@ -113,7 +113,8 @@ MODEL:
                 'point_box_weight': 1.0,
                 'corner_weight': 1.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                'dir_weight': 0.2
+                'dir_weight': 0.2,
+                'dpp_weight': 0.1
             }
 
 

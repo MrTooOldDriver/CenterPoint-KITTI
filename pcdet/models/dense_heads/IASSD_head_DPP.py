@@ -486,9 +486,28 @@ class IASSD_Head_DPP(PointHeadTemplate):
             iou3d_loss, tb_dict_7 = self.get_iou3d_layer_loss()          
             tb_dict.update(tb_dict_7)
         
-        point_loss = center_loss_reg + center_loss_cls + center_loss_box + corner_loss + sa_loss_cls + iou3d_loss             
+        # dpp loss
+        dpp_loss = 0
+        if self.model_cfg.LOSS_CONFIG.get('DPP_LATENCY_CONSTRAINT_LOSS', False):
+            dpp_loss, tb_dict_8 = self.get_dpp_layer_loss(0.1)          
+            tb_dict.update(tb_dict_8)
+        
+        point_loss = center_loss_reg + center_loss_cls + center_loss_box + corner_loss + sa_loss_cls + iou3d_loss + dpp_loss
         return point_loss, tb_dict
 
+    def get_dpp_layer_loss(self, weights, tb_dict=None):
+        dpp_loss = 0
+        index = 0
+        weights = [0.001, 0.01, 0.01, 0.01, 0.01]
+        for i in range(len(self.forward_ret_dict['dpp_gates'])):
+            dpp_gates = self.forward_ret_dict['dpp_gates'][i]
+            target = torch.zeros_like(dpp_gates)
+            dpp_loss += F.binary_cross_entropy_with_logits(dpp_gates, target, reduction='none').mean() * weights[i]
+            if tb_dict is None:
+                tb_dict = {}
+            tb_dict.update({'dpp_layer_loss_%s' % index: dpp_loss.item()})
+            index += 1
+        return dpp_loss, tb_dict
 
     def get_contextual_vote_loss(self, tb_dict=None):        
         pos_mask = self.forward_ret_dict['center_origin_cls_labels'] > 0
@@ -875,6 +894,7 @@ class IASSD_Head_DPP(PointHeadTemplate):
                     'centers_origin': batch_dict['centers_origin'],
                     'sa_ins_preds': batch_dict['sa_ins_preds'],
                     'box_iou3d_preds': box_iou3d_preds,
+                    'dpp_gates': batch_dict['dpp_gates'],
                     }
         if self.training or self.debug:
             targets_dict = self.assign_targets(batch_dict)

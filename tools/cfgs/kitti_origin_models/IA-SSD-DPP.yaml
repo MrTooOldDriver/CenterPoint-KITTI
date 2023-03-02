@@ -52,6 +52,8 @@ MODEL:
 
             # DPP SETTING
             DPP_LAYER: [0, 1, 2, 3]
+            DPP_CHANNEL_IN: [1, 64, 128, 256]
+            DPP_CHANNEL_OUT: [64, 128, 256, 256]
 
 
     POINT_HEAD:
@@ -92,6 +94,7 @@ MODEL:
             CORNER_LOSS_REGULARIZATION: True
             CENTERNESS_REGULARIZATION: True
             CENTERNESS_REGULARIZATION_SA: True
+            DPP_LATENCY_CONSTRAINT_LOSS: True
             LOSS_WEIGHTS: {
                 'ins_aware_weight': [0, 1.0, 1.0],
                 'vote_weight': 1.0,

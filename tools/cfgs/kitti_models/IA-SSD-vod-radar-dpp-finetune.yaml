@@ -31,6 +31,7 @@ DATA_CONFIG:
         #     - NAME: random_world_scaling
         #       WORLD_SCALE_RANGE: [0.95, 1.05]
 
+FREEZE_MODE: head
 MODEL:
     NAME: IASSD_DPP
      
@@ -138,9 +139,10 @@ OPTIMIZATION:
     NUM_EPOCHS: 80
 
     OPTIMIZER: adam_onecycle
-    LR: 0.01
+    LR: 0.005
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
+
 
     MOMS: [0.95, 0.85]
     PCT_START: 0.4

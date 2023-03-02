@@ -95,7 +95,7 @@ class IASSD_Backbone_DPP(nn.Module): # Dynamic Point Ponder
                     dpp_channel_in = sa_config.DPP_CHANNEL_IN[dpp_index]
                     dpp_channel_out = sa_config.DPP_CHANNEL_OUT[dpp_index]
                     self.SA_router_modules.append(
-                        DynamicPointPonderRouterMLP(feat_num=dpp_channel_out)
+                        DynamicPointPonderRouterMLP(feat_num=dpp_channel_in)
                     )
                     self.SA_upsample_modules.append(
                         DynamicPointPonderUpSampling(input_feat_num=dpp_channel_in, output_feat_num=dpp_channel_out)
@@ -172,6 +172,7 @@ class IASSD_Backbone_DPP(nn.Module): # Dynamic Point Ponder
 
         # inital DPP gate
         current_routing_gate = torch.ones(size=xyz.shape[0:2]).cuda()
+        dpp_gates = []
 
         li_cls_pred = None
         for i in range(len(self.SA_modules)):
@@ -196,9 +197,9 @@ class IASSD_Backbone_DPP(nn.Module): # Dynamic Point Ponder
                     if not os.path.exists(save_path):
                         os.mkdir(save_path)
                 # construct a saving path for different layer
-                if i in self.dpp_layers and i!=0:
+                if i in self.dpp_layers:
                     # update gate using current feat
-                    new_routing_gate = self.SA_router_modules[i-1](feature_input).squeeze()
+                    new_routing_gate = self.SA_router_modules[i](feature_input).squeeze()
                     if self.training or len(new_routing_gate.shape) == 3:
                         new_routing_gate = F.gumbel_softmax(new_routing_gate, dim=-1, hard=True, tau=0.1)
                         new_routing_gate = new_routing_gate[:, :, 0].contiguous()
@@ -211,6 +212,7 @@ class IASSD_Backbone_DPP(nn.Module): # Dynamic Point Ponder
                         # new_routing_gate = new_routing_gate.type(torch.float32)
                         # new_routing_gate = torch.ones_like(new_routing_gate) - new_routing_gate
                     current_routing_gate = new_routing_gate
+                dpp_gates.append(current_routing_gate)
 
                 li_xyz, li_features, li_cls_pred, li_sampled_idx_list = self.SA_modules[i](xyz_input, feature_input, li_cls_pred, ctr_xyz=ctr_xyz, save_features_dir=save_path, frame_id=batch_dict['frame_id'][0])
                 # print('index i=', i)
@@ -236,14 +238,12 @@ class IASSD_Backbone_DPP(nn.Module): # Dynamic Point Ponder
                     li_features = li_features * correspondence_gate
                     # add original feat back for keeping point
                     li_features = li_features + (correspondence_original_feat_upsample * correspondence_invert_gate)
-        
-                    # if self.eval:
-                    #     print(' [0] Next gumbel_softmax ponder %i points' % (new_routing_gate[0] == 0.).sum(dim=0))
-
-                    # if not self.training:
-                    #     print(' [0] At i=%i ponder %i points' % (i, (current_routing_gate[0] == 0.).sum(dim=0)))
-                    #     self.gate_static[i] += (current_routing_gate[0] == 0.).sum(dim=0).item()
-                    #     print('gate_static: ', self.gate_static)
+                    
+                    display_dpp_static = False
+                    if display_dpp_static and not self.training:
+                        print(' At i=%i ponder %i points' % (i, (current_routing_gate == 0.).sum().cpu().numpy()))
+                        print(' At i=%i keep %i points' % (i, (current_routing_gate == 1.).sum().cpu().numpy()))
+                        self.gate_static[i] += (current_routing_gate == 0.).sum().cpu().numpy()
 
                     save_dpp_gate_vis = False
                     if save_dpp_gate_vis and not self.training:
@@ -259,16 +259,19 @@ class IASSD_Backbone_DPP(nn.Module): # Dynamic Point Ponder
                             gt = batch_dict['gt_boxes'][j].cpu().numpy()
                             idx = str(idx)
                             
-                            dpp_enable_points = xyz_input[current_routing_gate[0][j] == 1.].cpu().numpy()
-                            xyz_input_save_points = xyz_input.cpu().numpy()
+                            dpp_enable_points = xyz_input[j][current_routing_gate[j] == 1.].cpu().numpy()
+                            dpp_disable_points = xyz_input[j][current_routing_gate[j] == 0.].cpu().numpy()
+                            xyz_input_save_points = xyz_input[j].cpu().numpy()
                             
-                            dpp_xyz = point_saved_path / ('dpp_enable_points_list_' + ('%s' % idx) + '_xyz_layer_' + ('%s' % i))
+                            dpp_enable_xyz = point_saved_path / ('dpp_enable_points_list_' + ('%s' % idx) + '_dpp_enable_layer_' + ('%s' % i))
+                            dpp_disable_xyz = point_saved_path / ('dpp_enable_points_list_' + ('%s' % idx) + '_dpp_disable_layer_' + ('%s' % i))
                             layer_xyz = point_saved_path / ('dpp_enable_points_list_' + ('%s' % idx) + '_layer_xyz_layer_' + ('%s' % i))
                             sample_gt = point_saved_path / ('dpp_enable_points_list_' + ('%s' % idx) + '_gt_layer_' + ('%s' % i))
                             
-                            np.save(str(sample_gt), gt)
+                            np.save(str(dpp_enable_xyz), dpp_enable_points)
+                            np.save(str(dpp_disable_xyz), dpp_disable_points)
                             np.save(str(layer_xyz), xyz_input_save_points)
-                            np.save(str(dpp_xyz), dpp_enable_points)
+                            np.save(str(sample_gt), gt)
 
             elif self.layer_types[i] == 'Vote_Layer': #i=4
                 # print(feature_input.shape)
@@ -313,7 +316,10 @@ class IASSD_Backbone_DPP(nn.Module): # Dynamic Point Ponder
         batch_dict['encoder_coords'] = encoder_coords
         batch_dict['sa_ins_preds'] = sa_ins_preds
         batch_dict['encoder_features'] = encoder_features # not used later?
+        batch_dict['dpp_gates'] = dpp_gates
         
+        if display_dpp_static and not self.training:
+            print('gate_static(shutdown points): ', self.gate_static)
         
         ###save per frame 
         # if self.model_cfg.SA_CONFIG.get('SAVE_SAMPLE_LIST',False) and not self.training:  
@@ -364,19 +370,6 @@ class DynamicPointPonderRouterMLP(nn.Module):
         x = self.gate_activate(x)
         return x
 
-
-class DynamicPointPonderRouterAvg(nn.Module):
-    def __init__(self, feat_num):
-
-        super(DynamicPointPonderRouterAvg, self).__init__()
-        self.feat_num = feat_num
-
-        self.gate_pool = nn.AvgPool1d(kernel_size=int(self.feat_num/2))
-
-    def forward(self, x):
-        x = x.permute(0,2,1)
-        x = self.gate_pool(x)
-        return x
 
 class DynamicPointPonderUpSampling(nn.Module):
     def __init__(self, input_feat_num, output_feat_num):

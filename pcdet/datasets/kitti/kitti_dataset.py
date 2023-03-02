@@ -439,14 +439,14 @@ class KittiDataset(DatasetTemplate):
 
         final_evaluation = dict()
         self.logger.info('*************   using vod official evaluation script   *************')
-        if self.dataset_cfg.MOVING_OBJECT_ONLY:
+        if self.dataset_cfg.get('MOVING_OBJECT_ONLY', False):
             self.logger.info('*************   only evaluate moving object   *************')
         vod_evaluation_result = {}
         vod_evaluation_result.update(
-            vod_eval.get_official_eval_result(eval_gt_annos, eval_det_annos, class_names, is_radar=self.is_radar, moving_object_only=self.dataset_cfg.MOVING_OBJECT_ONLY))
+            vod_eval.get_official_eval_result(eval_gt_annos, eval_det_annos, class_names, is_radar=self.is_radar, moving_object_only=self.dataset_cfg.get('MOVING_OBJECT_ONLY', False)))
         vod_evaluation_result.update(
             vod_eval.get_official_eval_result(eval_gt_annos, eval_det_annos, class_names, custom_method=3,
-                                                is_radar=self.is_radar, moving_object_only=self.dataset_cfg.MOVING_OBJECT_ONLY))
+                                                is_radar=self.is_radar, moving_object_only=self.dataset_cfg.get('MOVING_OBJECT_ONLY', False)))
         final_evaluation['vod_eval'] = vod_evaluation_result
         self.logger.info('*************   using pcdet official evaluation script   *************')
         kitti_evaluation_result = {}
@@ -516,7 +516,7 @@ class KittiDataset(DatasetTemplate):
         if 'annos' in info:
             annos = info['annos']
             annos = common_utils.drop_info_with_name(annos, name='DontCare')
-            if self.dataset_cfg.MOVING_OBJECT_ONLY:
+            if self.dataset_cfg.get('MOVING_OBJECT_ONLY', False):
                 annos = common_utils.drop_static_objects(annos)
             loc, dims, rots = annos['location'], annos['dimensions'], annos['rotation_y']
             gt_names = annos['name']

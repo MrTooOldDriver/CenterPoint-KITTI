@@ -10,8 +10,8 @@ DATA_CONFIG:
 
         -   NAME: sample_points
             NUM_POINTS: {
-                'train': 512, # using waymo config
-                'test': 512
+                'train': 768, # using waymo config
+                'test': 768
             }
 
         -   NAME: shuffle_points
@@ -38,7 +38,7 @@ MODEL:
         NAME: IASSD_Backbone_DPP
         SA_CONFIG:
             # Sampling setting:
-            NPOINT_LIST: [[512], [512], [256], [128], [-1], [128]]
+            NPOINT_LIST: [[768], [768], [768], [64], [-1], [64]]
             SAMPLE_RANGE_LIST: [[-1], [-1], [-1], [-1], [-1], [-1]]
             SAMPLE_METHOD_LIST: &sample_method_list [['D-FPS'], ['D-FPS'], ['ctr_aware'], ['ctr_aware'], [], []]
             # Group and Abstraction setting:
@@ -55,7 +55,7 @@ MODEL:
             DILATED_GROUP: [False, False, False, False, False, False]            
             AGGREGATION_MLPS: [[64], [128], [256], [256], [], [512]]
             # Instance-aware setting:
-            CONFIDENCE_MLPS: [[], [128], [256], [], [], []]
+            CONFIDENCE_MLPS: [[64], [128], [256], [], [], []]
 
             LAYER_INPUT: [0, 1, 2, 3, 4, 3]
             CTR_INDEX: [-1, -1, -1, -1, -1, 5]
