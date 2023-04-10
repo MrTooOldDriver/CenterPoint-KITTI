@@ -10,6 +10,7 @@ from .nuscenes.nuscenes_dataset import NuScenesDataset
 from .inhouse.inhouse_dataset import inHouseDataset
 from .inhouse_new.inhouse_new_dataset import InhouseNewDataset
 from .kitti_origin.kitti_dataset import KittiOriginalDataset
+from .waymo.waymo_dataset import WaymoDataset
 
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
@@ -18,6 +19,7 @@ __all__ = {
     'inHouseDataset': inHouseDataset,
     'inHouseNewDataset': InhouseNewDataset,
     'KittiOriginalDataset': KittiOriginalDataset,
+    'WaymoDataset': WaymoDataset,
 }
 
 
