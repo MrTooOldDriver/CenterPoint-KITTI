@@ -1,7 +1,8 @@
-CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
+CLASS_NAMES: ['Car','Pedestrian', 'Cyclist']
+# CLASS_NAMES: ['Car']
 
 DATA_CONFIG:
-    _BASE_CONFIG_: cfgs/dataset_configs/kitti_origin_dataset.yaml
+    _BASE_CONFIG_: tools/cfgs/dataset_configs/vod_lidar_dataset_iassd_mix.yaml
 
     DATA_PROCESSOR:
         -   NAME: mask_points_and_boxes_outside_range
@@ -9,8 +10,8 @@ DATA_CONFIG:
 
         -   NAME: sample_points
             NUM_POINTS: {
-                'train': 16384,
-                'test': 16384
+                'train': 80000, # using waymo config
+                'test': 80000
             }
 
         -   NAME: shuffle_points
@@ -20,13 +21,13 @@ DATA_CONFIG:
             }
 
 MODEL:
-    NAME: IASSD_DPP
+    NAME: IASSD
      
     BACKBONE_3D:
-        NAME: IASSD_Backbone_DPP
+        NAME: IASSD_Backbone
         SA_CONFIG:
             # Sampling setting:
-            NPOINT_LIST: [[4096], [1024], [512], [256], [-1], [256]]
+            NPOINT_LIST: [[512], [512], [256], [128], [-1], [128]]
             SAMPLE_RANGE_LIST: [[-1], [-1], [-1], [-1], [-1], [-1]]
             SAMPLE_METHOD_LIST: &sample_method_list [['D-FPS'], ['D-FPS'], ['ctr_aware'], ['ctr_aware'], [], []]
             # Group and Abstraction setting:
@@ -50,14 +51,8 @@ MODEL:
             MAX_TRANSLATE_RANGE: [3.0, 3.0, 2.0]
             # SAVE_SAMPLE_LIST: True
 
-            # DPP SETTING
-            DPP_LAYER: [0, 1, 2, 3]
-            DPP_CHANNEL_IN: [1, 64, 128, 256]
-            DPP_CHANNEL_OUT: [64, 128, 256, 256]
-
-
     POINT_HEAD:
-        NAME: IASSD_Head_DPP
+        NAME: IASSD_Head
         CLS_FC: [256, 256]
         REG_FC: [256, 256]
         CLASS_AGNOSTIC: False
@@ -66,11 +61,11 @@ MODEL:
             INS_AWARE_ASSIGN: True
             GT_EXTRA_WIDTH: [0.2, 0.2, 0.2]
            
-            ASSIGN_METHOD:
-                NAME: 'extend_gt'
-                ASSIGN_TYPE: 'centers_origin' #'centers'(default) ,  'centers_origin'
-                EXTRA_WIDTH: [1.0, 1.0, 1.0]
-                FG_PC_IGNORE: False
+            # ASSIGN_METHOD:
+            #     NAME: 'extend_gt'
+            #     ASSIGN_TYPE: 'centers_origin' #'centers'(default) ,  'centers_origin'
+            #     EXTRA_WIDTH: [1.0, 1.0, 1.0]
+            #     FG_PC_IGNORE: False
 
             BOX_CODER: PointResidual_BinOri_Coder # 'PointBinResidualCoder', 'PointResidual_BinOri_Coder' 
             BOX_CODER_CONFIG: {
@@ -94,10 +89,6 @@ MODEL:
             CORNER_LOSS_REGULARIZATION: True
             CENTERNESS_REGULARIZATION: True
             CENTERNESS_REGULARIZATION_SA: True
-            DPP_LATENCY_CONSTRAINT_LOSS: True
-            DPP_FEATURE_MATCHING_LOSS: True
-            DPP_BUDGET_SCALE_LOSS_WEIGHT: 0
-            DPP_FEATURE_MATCHING_LOSS_WEIGHT: 0.01
             LOSS_WEIGHTS: {
                 'ins_aware_weight': [0, 1.0, 1.0],
                 'vote_weight': 1.0,

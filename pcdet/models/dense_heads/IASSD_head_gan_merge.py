@@ -7,7 +7,7 @@ from .point_head_template import PointHeadTemplate
 from ...ops.roiaware_pool3d import roiaware_pool3d_utils
 
 
-class IASSD_Head_DPP(PointHeadTemplate):
+class IASSD_Head_gan_merge(PointHeadTemplate):
     """
     A simple point-based detect head, which are used for IA-SSD.
     """
@@ -486,62 +486,9 @@ class IASSD_Head_DPP(PointHeadTemplate):
             iou3d_loss, tb_dict_7 = self.get_iou3d_layer_loss()          
             tb_dict.update(tb_dict_7)
         
-        # dpp loss
-        dpp_loss = 0
-        if self.model_cfg.LOSS_CONFIG.get('DPP_LATENCY_CONSTRAINT_LOSS', False):
-            dpp_loss, tb_dict_8 = self.get_dpp_layer_loss()          
-            tb_dict.update(tb_dict_8)
-            
-        # dpp upsampling feature matching loss
-        dpp_feature_matching_loss = 0
-        if self.model_cfg.LOSS_CONFIG.get('DPP_FEATURE_MATCHING_LOSS', False):
-            dpp_feature_matching_loss, tb_dict_9 = self.get_dpp_feature_matching_loss()          
-            tb_dict.update(tb_dict_9)
-
-        point_loss = center_loss_reg + center_loss_cls + center_loss_box + corner_loss + sa_loss_cls + iou3d_loss + dpp_loss + dpp_feature_matching_loss
+        point_loss = center_loss_reg + center_loss_cls + center_loss_box + corner_loss + sa_loss_cls + iou3d_loss             
         return point_loss, tb_dict
 
-    def get_dpp_feature_matching_loss(self, tb_dict=None):
-        dpp_feature_matching_loss = 0 + 1e-8
-        inv_open_gates_total_num = 0 + 1e-8
-        for i in range(len(self.forward_ret_dict['dpp_inverted_gates'])):
-            dpp_inv_gates = self.forward_ret_dict['dpp_inverted_gates'][i]
-            if dpp_inv_gates != []:
-                # with gates
-                # valid_upsample_feat = self.forward_ret_dict['dpp_upsampled_features'][i] * dpp_inv_gates
-                # valid_original_feat = self.forward_ret_dict['dpp_original_features'][i] * dpp_inv_gates
-                # with out gates
-                valid_upsample_feat = self.forward_ret_dict['dpp_upsampled_features'][i]
-                valid_original_feat = self.forward_ret_dict['dpp_original_features'][i]
-                
-                valid_original_feat = valid_original_feat.clone().detach() # No Gard needed, this just supervise the upsampling
-                dpp_feature_matching_loss += F.mse_loss(valid_upsample_feat, valid_original_feat, reduction='sum')
-                
-                inv_open_gates_num = (dpp_inv_gates == 1).sum()
-                inv_open_gates_total_num += inv_open_gates_num
-        dpp_feature_matching_loss = dpp_feature_matching_loss / inv_open_gates_total_num
-        dpp_feature_matching_loss = dpp_feature_matching_loss * self.model_cfg.LOSS_CONFIG.DPP_FEATURE_MATCHING_LOSS_WEIGHT
-        if tb_dict is None:
-            tb_dict = {}
-            tb_dict.update({'dpp_feature_matching_loss': dpp_feature_matching_loss.item()})
-            tb_dict.update({'inv_open_gates_total_num(upsampling number)': inv_open_gates_total_num.item()})
-        return dpp_feature_matching_loss, tb_dict         
-
-    def get_dpp_layer_loss(self, tb_dict=None):
-        dpp_loss = 0
-        weights = [0, 0.25, 0.25, 0.25, 0.25] # TODO replace with computation
-        for i in range(len(self.forward_ret_dict['dpp_gates'])):
-            dpp_gates = self.forward_ret_dict['dpp_gates'][i]
-            total_number_of_query = dpp_gates.shape[0] * dpp_gates.shape[1]
-            target = torch.zeros_like(dpp_gates)
-            current_dpp_loss = (F.binary_cross_entropy(dpp_gates, target, reduction='sum')/ total_number_of_query) * weights[i]
-            if tb_dict is None:
-                tb_dict = {}
-            tb_dict.update({'dpp_layer_loss_%s' % i: current_dpp_loss.item()})
-            dpp_loss += current_dpp_loss
-        dpp_loss = dpp_loss * self.model_cfg.LOSS_CONFIG.DPP_BUDGET_SCALE_LOSS_WEIGHT
-        tb_dict.update({'dpp_layer_loss_total': dpp_loss.item()})
-        return dpp_loss, tb_dict
 
     def get_contextual_vote_loss(self, tb_dict=None):        
         pos_mask = self.forward_ret_dict['center_origin_cls_labels'] > 0
@@ -667,7 +614,6 @@ class IASSD_Head_DPP(PointHeadTemplate):
                 centerness_mask = self.generate_center_ness_mask()
                 one_hot_targets = one_hot_targets * centerness_mask.unsqueeze(-1).repeat(1, one_hot_targets.shape[1])
             pass
-
         point_loss_cls = self.cls_loss_func(point_cls_preds, one_hot_targets, weights=cls_weights).mean(dim=-1).sum()
         loss_weights_dict = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS
         point_loss_cls = point_loss_cls * loss_weights_dict['point_cls_weight']
@@ -914,6 +860,17 @@ class IASSD_Head_DPP(PointHeadTemplate):
                 batch_cls_preds: (N1 + N2 + N3 + ..., num_class)
                 point_box_preds: (N1 + N2 + N3 + ..., 7)
         """
+        # center_features = batch_dict['last_encoder_features']
+        # center_coords = batch_dict['centers']
+        # attch_center_features = batch_dict['att']['last_encoder_features']
+        # attch_center_coords = batch_dict['att']['centers']
+
+        # # Concat features b*n*c and attch b*n*c. = b*(n+attach_n)*c
+        # center_features = torch.cat([center_features, attch_center_features], dim=2)
+        # center_features = center_features.permute(0, 2, 1).contiguous().view(-1, center_features.shape[1])
+        # center_coords = torch.cat([center_coords, attch_center_coords], dim=0)
+        # batch_dict['centers_features'] = center_features
+        # batch_dict['centers'] = center_coords
 
         center_features = batch_dict['centers_features']
         center_coords = batch_dict['centers']
@@ -921,6 +878,9 @@ class IASSD_Head_DPP(PointHeadTemplate):
         center_box_preds = self.box_center_layers(center_features)  # (total_centers, box_code_size)
         box_iou3d_preds = self.box_iou3d_layers(center_features) if self.box_iou3d_layers is not None else None
 
+        center_cls_preds = self.cls_center_layers(center_features)  # (total_centers, num_class)
+        center_box_preds = self.box_center_layers(center_features)  # (total_centers, box_code_size)
+        box_iou3d_preds = self.box_iou3d_layers(center_features) if self.box_iou3d_layers is not None else None
         ret_dict = {'center_cls_preds': center_cls_preds,
                     'center_box_preds': center_box_preds,
                     'ctr_offsets': batch_dict['ctr_offsets'],
@@ -928,10 +888,6 @@ class IASSD_Head_DPP(PointHeadTemplate):
                     'centers_origin': batch_dict['centers_origin'],
                     'sa_ins_preds': batch_dict['sa_ins_preds'],
                     'box_iou3d_preds': box_iou3d_preds,
-                    'dpp_gates': batch_dict['dpp_gates'],
-                    'dpp_inverted_gates': batch_dict['dpp_inverted_gates'],
-                    'dpp_upsampled_features': batch_dict['dpp_upsampled_features'],
-                    'dpp_original_features': batch_dict['dpp_original_features'],
                     }
         if self.training or self.debug:
             targets_dict = self.assign_targets(batch_dict)

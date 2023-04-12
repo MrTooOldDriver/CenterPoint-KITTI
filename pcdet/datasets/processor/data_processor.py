@@ -183,6 +183,48 @@ class DataProcessor(object):
         data_dict['points'] = points[choice]
         return data_dict
 
+    def sample_points_by_voxels(self, data_dict=None, config=None, voxel_generator=None):
+        if data_dict is None:
+            grid_size = (self.point_cloud_range[3:6] - self.point_cloud_range[0:3]) / np.array(config.VOXEL_SIZE)
+            self.grid_size = np.round(grid_size).astype(np.int64)
+            self.voxel_size = config.VOXEL_SIZE
+
+            if self.voxel_generator is None:
+                voxel_generator = VoxelGeneratorWrapper(
+                    vsize_xyz=config.VOXEL_SIZE,
+                    coors_range_xyz=self.point_cloud_range,
+                    num_point_features=self.num_point_features,
+                    max_num_points_per_voxel=config.MAX_POINTS_PER_VOXEL,
+                    max_num_voxels=config.MAX_NUMBER_OF_VOXELS[self.mode],
+                )
+
+            return partial(self.sample_points_by_voxels, config=config)
+
+        num_points = config.NUM_POINTS[self.mode]
+        if num_points == -1:  # dynamic voxelization !
+            return data_dict
+
+        # voxelization
+        data_dict = self.transform_points_to_voxels(data_dict, config)
+        if config.get('SAMPLE_TYPE', 'raw') == 'mean_vfe':
+            voxels = data_dict['voxels']
+            voxel_num_points = data_dict['voxel_num_points']
+            a = voxels.sum(axis=1)
+            b = np.expand_dims(voxel_num_points, axis=1).repeat(voxels.shape[-1], axis=-1)
+            points = a / b
+
+        else: # defalt: 'raw'
+            points = data_dict['voxels'][:,0] # remain only one point per voxel
+
+        data_dict['points'] = points
+        # sampling
+        data_dict = self.sample_points(data_dict, config)
+        data_dict.pop('voxels')
+        data_dict.pop('voxel_coords')
+        data_dict.pop('voxel_num_points')
+
+        return data_dict
+
 
     def sample_points(self, data_dict=None, config=None):
         if data_dict is None:

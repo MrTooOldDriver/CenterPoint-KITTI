@@ -1,32 +1,48 @@
-CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
+CLASS_NAMES: ['Vehicle', 'Pedestrian', 'Cyclist']
 
 DATA_CONFIG:
-    _BASE_CONFIG_: cfgs/dataset_configs/kitti_origin_dataset.yaml
+    _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset.yaml
+    DATA_SPLIT: {
+        'train': train,
+        'test': val,
+    }
+
+    SAMPLED_INTERVAL: {
+        'train': 5,
+        'test': 1
+    }
 
     DATA_PROCESSOR:
         -   NAME: mask_points_and_boxes_outside_range
             REMOVE_OUTSIDE_BOXES: True
-
-        -   NAME: sample_points
-            NUM_POINTS: {
-                'train': 16384,
-                'test': 16384
-            }
 
         -   NAME: shuffle_points
             SHUFFLE_ENABLED: {
                 'train': True,
                 'test': False
             }
+            
+        -   NAME: sample_points_by_voxels  # after the shuffle_points
+            SAMPLE_TYPE: 'raw'    # 'mean_vfe', 'raw' (default)
+            VOXEL_SIZE: [0.1, 0.1, 0.15]
+            MAX_POINTS_PER_VOXEL: 5            
+            MAX_NUMBER_OF_VOXELS: {
+                'train': 80000,
+                'test': 90000
+                }
+            NUM_POINTS: {
+                'train': 65536,
+                'test': 65536
+                }
 
 MODEL:
     NAME: IASSD_DPP
-     
+    
     BACKBONE_3D:
         NAME: IASSD_Backbone_DPP
         SA_CONFIG:
             # Sampling setting:
-            NPOINT_LIST: [[4096], [1024], [512], [256], [-1], [256]]
+            NPOINT_LIST: [[16384], [4096], [2048], [1024], [-1], [1024]]
             SAMPLE_RANGE_LIST: [[-1], [-1], [-1], [-1], [-1], [-1]]
             SAMPLE_METHOD_LIST: &sample_method_list [['D-FPS'], ['D-FPS'], ['ctr_aware'], ['ctr_aware'], [], []]
             # Group and Abstraction setting:
@@ -52,7 +68,7 @@ MODEL:
 
             # DPP SETTING
             DPP_LAYER: [0, 1, 2, 3]
-            DPP_CHANNEL_IN: [1, 64, 128, 256]
+            DPP_CHANNEL_IN: [2, 64, 128, 256]
             DPP_CHANNEL_OUT: [64, 128, 256, 256]
 
 
@@ -77,9 +93,9 @@ MODEL:
                 'angle_bin_num': 12,
                 'use_mean_size': True,                
                 'mean_size': [
-                    [3.9, 1.6, 1.56],
-                    [0.8, 0.6, 1.73],
-                    [1.76, 0.6, 1.73]
+                    [4.7, 2.1, 1.7],
+                    [0.91, 0.86, 1.73],
+                    [1.78, 0.84, 1.78]
                 ]
             }
 
@@ -96,7 +112,7 @@ MODEL:
             CENTERNESS_REGULARIZATION_SA: True
             DPP_LATENCY_CONSTRAINT_LOSS: True
             DPP_FEATURE_MATCHING_LOSS: True
-            DPP_BUDGET_SCALE_LOSS_WEIGHT: 0
+            DPP_BUDGET_SCALE_LOSS_WEIGHT: 0.001
             DPP_FEATURE_MATCHING_LOSS_WEIGHT: 0.01
             LOSS_WEIGHTS: {
                 'ins_aware_weight': [0, 1.0, 1.0],
@@ -110,24 +126,23 @@ MODEL:
 
 
     POST_PROCESSING:
-        RECALL_MODE: 'normal'  # 'normal'(default), 'detail', 'speed'(no recall info)
         RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
         SCORE_THRESH: 0.1
         OUTPUT_RAW_SCORE: False
 
-        EVAL_METRIC: kitti
+        EVAL_METRIC: waymo
 
         NMS_CONFIG:
             MULTI_CLASSES_NMS: False
             NMS_TYPE: nms_gpu
-            NMS_THRESH: 0.01
+            NMS_THRESH: 0.1
             NMS_PRE_MAXSIZE: 4096
             NMS_POST_MAXSIZE: 500
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 8
-    NUM_EPOCHS: 80
+    BATCH_SIZE_PER_GPU: 2  # 8
+    NUM_EPOCHS: 30
 
     OPTIMIZER: adam_onecycle
     LR: 0.01

@@ -40,11 +40,11 @@ class KittiDataset(DatasetTemplate):
         self.debug = dataset_cfg.get('DEBUG', False)
         self.use_vel = dataset_cfg.get('USE_VEL', False)
         # modified for trans-ssd
-        self.use_attach = self.dataset_cfg.get('USE_ATTACH', False)
-        self.attach_root = self.dataset_cfg.get('ATTACH_ROOT', None) if self.use_attach else None
-        self.attach_root = Path(self.attach_root) if self.attach_root is not None else None
+        self.use_attach = dataset_cfg.get('USE_ATTACH', False)
         self.resample_pts_num = 100  # default setting
         self.block_point_cloud_features = self.dataset_cfg.get('BLOCK_POINT_CLOUD_FEATURES', False)
+        self.use_mix_lidar_radar = dataset_cfg.get('USE_MIX_LIDAR_RADAR', False)
+        self.always_load_attach = dataset_cfg.get('ALWAYS_LOAD_ATTACH', False)
         for process_cfg in self.dataset_cfg.DATA_PROCESSOR:
             if process_cfg.NAME == 'sample_radar_points':
                 self.resample_pts_num = process_cfg.MIN_NUM_PTS
@@ -84,6 +84,10 @@ class KittiDataset(DatasetTemplate):
         lidar_point_cloud = np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
         if self.block_point_cloud_features:
             lidar_point_cloud[:, 3:] = 0
+        if self.use_mix_lidar_radar:
+            lidar_point_cloud = np.concatenate((lidar_point_cloud, np.zeros((lidar_point_cloud.shape[0], 2))),axis=1)
+            assert lidar_point_cloud.shape[1] == 4 + 2
+            return lidar_point_cloud
         return lidar_point_cloud
 
     def get_attach_lidar(self, idx):
@@ -94,6 +98,11 @@ class KittiDataset(DatasetTemplate):
         lidar_point_cloud = np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
         if self.block_point_cloud_features:
             lidar_point_cloud[:, 3:] = 0
+        if self.use_mix_lidar_radar:
+            lidar_point_cloud = np.concatenate((lidar_point_cloud, np.zeros((lidar_point_cloud.shape[0], 2))),axis=1)
+            assert lidar_point_cloud.shape[1] == 4 + 2
+            return lidar_point_cloud
+
         return lidar_point_cloud
 
     def get_attach_radar(self, idx):
@@ -118,6 +127,11 @@ class KittiDataset(DatasetTemplate):
         if self.block_point_cloud_features:
             radar_points[:, 3:] = 0
 
+        if self.use_mix_lidar_radar:
+            new_radar_points = np.concatenate((radar_points[:, :3], np.zeros((radar_points.shape[0], 1))), axis=1)
+            new_radar_points = np.concatenate((new_radar_points, radar_points[:, idx[3:]]), axis=1)
+            assert new_radar_points.shape[1] == 1 + len(idx)
+            return new_radar_points
         
         return radar_points[:,idx]
 
@@ -128,6 +142,12 @@ class KittiDataset(DatasetTemplate):
         radar_point_cloud = np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 7)
         if self.block_point_cloud_features:
             radar_point_cloud[:, 3:] = 0
+        if self.use_mix_lidar_radar:
+            idx = [0,1,2,3,5]
+            final_radar_point_cloud = np.concatenate((radar_point_cloud[:, :3], np.zeros((radar_point_cloud.shape[0], 1))), axis=1)
+            final_radar_point_cloud = np.concatenate((final_radar_point_cloud, radar_point_cloud[:, idx[3:]]), axis=1)
+            assert final_radar_point_cloud.shape[1] == 1 + len(idx)
+            return final_radar_point_cloud
         return radar_point_cloud
 
     def get_image_shape(self, idx):
@@ -460,10 +480,18 @@ class KittiDataset(DatasetTemplate):
         if self._merge_all_iters_to_one_epoch:
             return len(self.kitti_infos) * self.total_epochs
 
+        if self.use_mix_lidar_radar and self.training:
+            return len(self.kitti_infos) * 2
         return len(self.kitti_infos)
 
     def __getitem__(self, index):
         # index = 4
+        if self.use_mix_lidar_radar and index - len(self.kitti_infos) >= 0:
+            using_mix = True
+            index = index - len(self.kitti_infos)
+        else:
+            using_mix = False
+
         if self._merge_all_iters_to_one_epoch:
             index = index % len(self.kitti_infos)
 
@@ -475,7 +503,7 @@ class KittiDataset(DatasetTemplate):
         calib = self.get_calib(sample_idx)
 
         
-        if self.use_attach & self.training:
+        if (self.use_attach & self.training) or (self.use_attach & self.always_load_attach):
             if self.is_radar:
                 attach_calib = self.get_attach_calib(sample_idx)
                 attach = self.get_attach_lidar(sample_idx)
@@ -504,7 +532,18 @@ class KittiDataset(DatasetTemplate):
                 attach_fov = attach[attach_fov_flag]
                 attach_feature = attach_fov[:, 3:]
                 attach = np.concatenate((attach_tranformed, attach_feature), axis=-1)
-
+        if self.use_mix_lidar_radar:
+            if using_mix:
+                if self.is_radar:
+                    points = attach
+                    points_index = np.arange(points.shape[0])
+                    points_index_choice = np.random.choice(points_index, 768, replace=False)
+                    points = points[points_index_choice, :]
+                else:
+                    points = attach
+            else:
+                # get orginal, but with padding
+                points = points
         input_dict = {
             'points': points,
             'frame_id': sample_idx,

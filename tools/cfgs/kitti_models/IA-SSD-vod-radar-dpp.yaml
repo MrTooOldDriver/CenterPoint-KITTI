@@ -10,8 +10,8 @@ DATA_CONFIG:
 
         -   NAME: sample_points
             NUM_POINTS: {
-                'train': 512, # using waymo config
-                'test': 512
+                'train': 768,
+                'test': 768
             }
 
         -   NAME: shuffle_points
@@ -19,17 +19,21 @@ DATA_CONFIG:
                 'train': True,
                 'test': False
             }
-    # DATA_AUGMENTOR:
-    #     DISABLE_AUG_LIST: ['placeholder']
-    #     # - NAME: random_world_flip
-    #     #   ALONG_AXIS_LIST: ['x']
-    #     POINT_FEATURE_ENCODING: {
-    #     encoding_type: absolute_coordinates_encoding,
-    #     used_feature_list: ['x', 'y', 'z', 'RCS', 'v_r_compensated'],
-    #     src_feature_list: ['x', 'y', 'z', 'RCS', 'v_r', 'v_r_compensated', 'time'],
-    #     }
-        #     - NAME: random_world_scaling
-        #       WORLD_SCALE_RANGE: [0.95, 1.05]
+
+    DATA_AUGMENTOR:
+        DISABLE_AUG_LIST: ['random_world_rotation', 'gt_sampling']
+        AUG_CONFIG_LIST:
+            - NAME: random_world_flip
+              ALONG_AXIS_LIST: ['x']
+
+            - NAME: random_world_scaling
+              WORLD_SCALE_RANGE: [0.95, 1.05]
+
+POINT_FEATURE_ENCODING: {
+    encoding_type: absolute_coordinates_encoding,
+    used_feature_list: ['x', 'y', 'z', 'RCS', 'v_r_compensated'],
+    src_feature_list: ['x', 'y', 'z', 'RCS', 'v_r', 'v_r_compensated', 'time'],
+}
 
 MODEL:
     NAME: IASSD_DPP
@@ -38,7 +42,7 @@ MODEL:
         NAME: IASSD_Backbone_DPP
         SA_CONFIG:
             # Sampling setting:
-            NPOINT_LIST: [[512], [512], [256], [128], [-1], [128]]
+            NPOINT_LIST: [[768], [512], [256], [128], [-1], [128]]
             SAMPLE_RANGE_LIST: [[-1], [-1], [-1], [-1], [-1], [-1]]
             SAMPLE_METHOD_LIST: &sample_method_list [['D-FPS'], ['D-FPS'], ['ctr_aware'], ['ctr_aware'], [], []]
             # Group and Abstraction setting:
@@ -106,6 +110,9 @@ MODEL:
             CENTERNESS_REGULARIZATION: True
             CENTERNESS_REGULARIZATION_SA: True
             DPP_LATENCY_CONSTRAINT_LOSS: True
+            DPP_FEATURE_MATCHING_LOSS: True
+            DPP_BUDGET_SCALE_LOSS_WEIGHT: 0.0005
+            DPP_FEATURE_MATCHING_LOSS_WEIGHT: 0.0005
             LOSS_WEIGHTS: {
                 'ins_aware_weight': [0, 1.0, 1.0],
                 'vote_weight': 1.0,
@@ -145,7 +152,7 @@ OPTIMIZATION:
     MOMS: [0.95, 0.85]
     PCT_START: 0.4
     DIV_FACTOR: 10
-    DECAY_STEP_LIST: [35, 45]
+    DECAY_STEP_LIST: [35, 85]
     LR_DECAY: 0.1
     LR_CLIP: 0.0000001
 

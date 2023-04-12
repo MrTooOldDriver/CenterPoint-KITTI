@@ -252,30 +252,31 @@ def eval_one_epoch(cfg, model, dataloader, epoch_id, logger, dist_test=False, sa
     import copy
 
     gt_dict = {}
-    try:
-        for info in dataset.kitti_infos:
-            frame_id = copy.deepcopy(info['point_cloud']['lidar_idx'])
-            gt_anno = copy.deepcopy(info['annos'])
-            gt_dict[frame_id] = gt_anno
-            pass
-    except Exception:
-        logger.info('no available gt annos, running as testing')
+    if dataset.infos is None:
+        try:
+            for info in dataset.kitti_infos:
+                frame_id = copy.deepcopy(info['point_cloud']['lidar_idx'])
+                gt_anno = copy.deepcopy(info['annos'])
+                gt_dict[frame_id] = gt_anno
+                pass
+        except Exception:
+            logger.info('no available gt annos, running as testing')
 
-        if save_to_file:
-            with open(result_dir / 'gt.pkl', 'wb') as f:
-                pickle.dump(gt_dict, f)
+            if save_to_file:
+                with open(result_dir / 'gt.pkl', 'wb') as f:
+                    pickle.dump(gt_dict, f)
 
-            # save detection
-            with open(result_dir / 'dt.pkl', 'wb') as f:
-                pickle.dump(det_dict, f)
+                # save detection
+                with open(result_dir / 'dt.pkl', 'wb') as f:
+                    pickle.dump(det_dict, f)
 
-            # save frame ids
-            with open(result_dir / 'frame_ids.txt', 'w') as f:
-                for id in frame_ids:
-                    f.write(str(id) + ',')
+                # save frame ids
+                with open(result_dir / 'frame_ids.txt', 'w') as f:
+                    for id in frame_ids:
+                        f.write(str(id) + ',')
 
-        import sys
-        sys.exit()
+            import sys
+            sys.exit()
 
     gt_annos = []
     for id in frame_ids:

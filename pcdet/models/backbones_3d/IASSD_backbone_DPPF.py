@@ -2,11 +2,13 @@ import pathlib
 from pyexpat import model
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from ...ops.pointnet2.pointnet2_batch import pointnet2_modules
+from ...ops.pointnet2.pointnet2_batch import pointnet2_utils
 import os
 
-class IASSD_Backbone(nn.Module):
+class IASSD_Backbone_DPPF(nn.Module): # Dynamic Point Ponder
     """ Backbone for IA-SSD"""
 
     def __init__(self, model_cfg, input_channels, **kwargs):
@@ -16,6 +18,8 @@ class IASSD_Backbone(nn.Module):
         
 
         self.SA_modules = nn.ModuleList()
+        self.SA_router_modules = nn.ModuleList()
+        self.SA_upsample_modules = nn.ModuleList()
         channel_in = input_channels - 3
         channel_out_list = [channel_in]
 
@@ -28,6 +32,7 @@ class IASSD_Backbone(nn.Module):
         self.aggregation_mlps = sa_config.get('AGGREGATION_MLPS', None)
         self.confidence_mlps = sa_config.get('CONFIDENCE_MLPS', None)
         self.max_translate_range = sa_config.get('MAX_TRANSLATE_RANGE', None)
+        self.dpp_layers = sa_config.DPP_LAYER
 
         # =====================================================
         # add options in backbone configuration, a path to save 
@@ -80,9 +85,25 @@ class IASSD_Backbone(nn.Module):
                         aggregation_mlp=aggregation_mlp,
                         confidence_mlp=confidence_mlp,
                         num_class = self.num_class,
-                        use_pooling_weights=self.use_pooling_weight
+                        use_pooling_weights=self.use_pooling_weight,
+                        sample_idx=True
                     )
                 )
+
+                if k in self.dpp_layers:
+                    dpp_index = self.dpp_layers.index(k)
+                    dpp_channel_in = sa_config.DPP_CHANNEL_IN[dpp_index]
+                    dpp_channel_out = sa_config.DPP_CHANNEL_OUT[dpp_index]
+                    self.SA_router_modules.append(
+                        DynamicPointPonderRouterMLP(feat_num=dpp_channel_in)
+                    )
+                    self.SA_upsample_modules.append(
+                        DynamicPointPonderUpSampling(input_feat_num=dpp_channel_in, output_feat_num=dpp_channel_out)
+                    )
+                    print('Create DPP layer Dynamic Module at layer %s channel_in %s channel_out %s' % (k, channel_in, channel_out))
+                else:
+                    self.SA_router_modules.append(None)
+                    self.SA_upsample_modules.append(None)
 
             elif self.layer_types[k] == 'Vote_Layer':
                 self.SA_modules.append(pointnet2_modules.Vote_layer(mlp_list=sa_config.MLPS[k],
@@ -113,6 +134,8 @@ class IASSD_Backbone(nn.Module):
 
         self.num_point_features = channel_out
 
+        self.total_gates = len(self.dpp_layers)
+        self.gate_static = [0 for _ in range(self.total_gates)]
 
     def break_up_pc(self, pc):
         batch_idx = pc[:, 0]
@@ -147,13 +170,14 @@ class IASSD_Backbone(nn.Module):
         encoder_xyz, encoder_features, sa_ins_preds = [xyz], [features], []
         encoder_coords = [torch.cat([batch_idx.view(batch_size, -1, 1), xyz], dim=-1)]
 
+        # inital DPP gate
+        current_routing_gate = torch.ones(size=xyz.shape[0:2]).cuda()
+        dpp_gates = []
+
         li_cls_pred = None
         for i in range(len(self.SA_modules)):
             xyz_input = encoder_xyz[self.layer_inputs[i]]
             feature_input = encoder_features[self.layer_inputs[i]]
-            if i == len(self.SA_modules) - 1:
-                batch_dict['att_last_xyz'] = xyz_input
-                batch_dict['att_last_features'] = feature_input
 
             if self.layer_types[i] == 'SA_Layer':
                 ctr_xyz = encoder_xyz[self.ctr_idx_list[i]] if self.ctr_idx_list[i] != -1 else None
@@ -173,13 +197,86 @@ class IASSD_Backbone(nn.Module):
                     if not os.path.exists(save_path):
                         os.mkdir(save_path)
                 # construct a saving path for different layer
+                if i in self.dpp_layers:
+                    # update gate using current feat
+                    new_routing_gate = self.SA_router_modules[i](feature_input).squeeze()
+                    if self.training or len(new_routing_gate.shape) == 3:
+                        new_routing_gate = F.gumbel_softmax(new_routing_gate, dim=-1, hard=True, tau=0.1)
+                        new_routing_gate = new_routing_gate[:, :, 0].contiguous()
+                    else: 
+                        new_routing_gate = F.gumbel_softmax(new_routing_gate, dim=-1, hard=True, tau=0.1)
+                        new_routing_gate = new_routing_gate[:, 0].unsqueeze(0).contiguous()
+                        #TODO Folloing code isn't right, fix it later plz
+                        # new_routing_gate = new_routing_gate.max(-1, keepdim=True)[1]
+                        # new_routing_gate = new_routing_gate.permute(1,0)
+                        # new_routing_gate = new_routing_gate.type(torch.float32)
+                        # new_routing_gate = torch.ones_like(new_routing_gate) - new_routing_gate
+                    current_routing_gate = new_routing_gate      
+                    # padding the dpp_xyz_input and dpp_feature_input to the same size
+                    dpp_current_gate = current_routing_gate.unsqueeze(-1)
+                    dpp_xyz_input = xyz_input * dpp_current_gate
+                    dpp_feature_input = feature_input * dpp_current_gate.permute(0, 2, 1)
 
-                li_xyz, li_features, li_cls_pred = self.SA_modules[i](xyz_input, feature_input, li_cls_pred, ctr_xyz=ctr_xyz, save_features_dir=save_path, frame_id=batch_dict['frame_id'][0])
+                dpp_gates.append(current_routing_gate)
+
+                li_xyz, li_features, li_cls_pred, li_sampled_idx_list = self.SA_modules[i](dpp_xyz_input, dpp_feature_input, li_cls_pred, ctr_xyz=ctr_xyz, save_features_dir=save_path, frame_id=batch_dict['frame_id'][0])
                 # print('index i=', i)
                 # print('feature_input.shape:', feature_input.shape)
+                # print('xyz_input.shape:', xyz_input.shape)
                 # print('li_xyz.shape: ', li_xyz.shape)
                 # print('li_features.shape: ', li_features.shape)
+                # print('ctr_xyz.shape: ', ctr_xyz.shape) if ctr_xyz is not None else None
                 # print('li_cls_pred.shape: ', li_cls_pred.shape) if li_cls_pred is not None else None
+
+                # DPP
+                if i in self.dpp_layers:
+                    assert current_routing_gate.shape[1] == xyz_input.shape[1]
+                    dpp_layer_idx = self.dpp_layers.index(i)
+                    # find correspondence
+                    routing_gate_for_gather = current_routing_gate.unsqueeze(-1).permute(0,2,1)
+                    correspondence_gate = pointnet2_utils.gather_operation(routing_gate_for_gather, li_sampled_idx_list).contiguous()
+                    correspondence_original_feat = pointnet2_utils.gather_operation(feature_input, li_sampled_idx_list).contiguous()
+                    correspondence_invert_gate = (torch.ones_like(correspondence_gate) - correspondence_gate).contiguous()
+                    correspondence_original_feat_upsample = self.SA_upsample_modules[dpp_layer_idx](correspondence_original_feat)
+                    
+                    # remove feat
+                    li_features = li_features * correspondence_gate
+                    # add original feat back for keeping point
+                    li_features = li_features + (correspondence_original_feat_upsample * correspondence_invert_gate)
+                    
+                    display_dpp_static = False
+                    if display_dpp_static and not self.training:
+                        print(' At i=%i ponder %i points' % (i, (current_routing_gate == 0.).sum().cpu().numpy()))
+                        print(' At i=%i keep %i points' % (i, (current_routing_gate == 1.).sum().cpu().numpy()))
+                        self.gate_static[i] += (current_routing_gate == 0.).sum().cpu().numpy()
+
+                    save_dpp_gate_vis = False
+                    if save_dpp_gate_vis and not self.training:
+                        ###save per frame 
+                        print('saving dpp gate vis')
+                        import numpy as np 
+                        result_dir = pathlib.Path('/root/hantao/CenterPoint-KITTI/dpp_vis')
+                        for j in range(batch_size)  :
+                            point_saved_path = result_dir / 'layer_gate_vis'
+                            os.makedirs(point_saved_path, exist_ok=True)
+                            
+                            idx = batch_dict['frame_id'][j]
+                            gt = batch_dict['gt_boxes'][j].cpu().numpy()
+                            idx = str(idx)
+                            
+                            dpp_enable_points = xyz_input[j][current_routing_gate[j] == 1.].cpu().numpy()
+                            dpp_disable_points = xyz_input[j][current_routing_gate[j] == 0.].cpu().numpy()
+                            xyz_input_save_points = xyz_input[j].cpu().numpy()
+                            
+                            dpp_enable_xyz = point_saved_path / ('dpp_enable_points_list_' + ('%s' % idx) + '_dpp_enable_layer_' + ('%s' % i))
+                            dpp_disable_xyz = point_saved_path / ('dpp_enable_points_list_' + ('%s' % idx) + '_dpp_disable_layer_' + ('%s' % i))
+                            layer_xyz = point_saved_path / ('dpp_enable_points_list_' + ('%s' % idx) + '_layer_xyz_layer_' + ('%s' % i))
+                            sample_gt = point_saved_path / ('dpp_enable_points_list_' + ('%s' % idx) + '_gt_layer_' + ('%s' % i))
+                            
+                            np.save(str(dpp_enable_xyz), dpp_enable_points)
+                            np.save(str(dpp_disable_xyz), dpp_disable_points)
+                            np.save(str(layer_xyz), xyz_input_save_points)
+                            np.save(str(sample_gt), gt)
 
             elif self.layer_types[i] == 'Vote_Layer': #i=4
                 # print(feature_input.shape)
@@ -224,7 +321,10 @@ class IASSD_Backbone(nn.Module):
         batch_dict['encoder_coords'] = encoder_coords
         batch_dict['sa_ins_preds'] = sa_ins_preds
         batch_dict['encoder_features'] = encoder_features # not used later?
+        batch_dict['dpp_gates'] = dpp_gates
         
+        if display_dpp_static and not self.training:
+            print('gate_static(shutdown points): ', self.gate_static)
         
         ###save per frame 
         # if self.model_cfg.SA_CONFIG.get('SAVE_SAMPLE_LIST',False) and not self.training:  
@@ -257,3 +357,39 @@ class IASSD_Backbone(nn.Module):
                 # np.save(str(new_file), point_new.detach().cpu().numpy())
         
         return batch_dict
+
+class DynamicPointPonderRouterMLP(nn.Module):
+    def __init__(self, feat_num):
+
+        super(DynamicPointPonderRouterMLP, self).__init__()
+        self.feat_num = feat_num
+
+        # self.gate1 = nn.Linear(self.feat_num, self.feat_num)
+        self.gate1 = nn.Linear(self.feat_num, 2)
+        
+    def forward(self, x):
+        x = x.permute(0,2,1)
+        x = self.gate1(x)
+        return x
+
+
+class DynamicPointPonderUpSampling(nn.Module):
+    def __init__(self, input_feat_num, output_feat_num):
+
+        super(DynamicPointPonderUpSampling, self).__init__()
+        self.input_feat_num = input_feat_num
+        self.output_feat_num = output_feat_num
+
+        self.up1 = nn.Linear(input_feat_num, input_feat_num)
+        self.up2 = nn.Linear(input_feat_num, output_feat_num)
+        self.up3 = nn.Linear(output_feat_num, output_feat_num)
+        self.activation = nn.ReLU()
+
+    def forward(self, x):
+        x = x.permute(0,2,1)
+        x = self.up1(x)
+        x = self.up2(x)
+        x = self.up3(x)
+        x = self.activation(x)
+        x = x.permute(0,2,1)
+        return x

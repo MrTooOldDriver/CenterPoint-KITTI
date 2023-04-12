@@ -106,7 +106,7 @@ MODEL:
             CORNER_LOSS_REGULARIZATION: True
             CENTERNESS_REGULARIZATION: True
             CENTERNESS_REGULARIZATION_SA: True
-            DPP_LATENCY_CONSTRAINT_LOSS: True
+            DPP_LATENCY_CONSTRAINT_LOSS: False
             LOSS_WEIGHTS: {
                 'ins_aware_weight': [0, 1.0, 1.0],
                 'vote_weight': 1.0,

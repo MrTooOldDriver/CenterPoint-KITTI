@@ -6,7 +6,7 @@ import torch.nn as nn
 from ...ops.pointnet2.pointnet2_batch import pointnet2_modules
 import os
 
-class IASSD_Backbone(nn.Module):
+class IASSD_Backbone_CFAR_Merge(nn.Module):
     """ Backbone for IA-SSD"""
 
     def __init__(self, model_cfg, input_channels, **kwargs):
@@ -152,8 +152,12 @@ class IASSD_Backbone(nn.Module):
             xyz_input = encoder_xyz[self.layer_inputs[i]]
             feature_input = encoder_features[self.layer_inputs[i]]
             if i == len(self.SA_modules) - 1:
-                batch_dict['att_last_xyz'] = xyz_input
-                batch_dict['att_last_features'] = feature_input
+                att_last_xyz = batch_dict['att']['att_last_xyz']
+                att_last_features = batch_dict['att']['att_last_features']
+                xyz_input = torch.cat([xyz_input, att_last_xyz], dim=1)
+                feature_input = torch.cat([feature_input, att_last_features], dim=-1)
+                # xyz_input = att_last_xyz
+                # feature_input = att_last_features
 
             if self.layer_types[i] == 'SA_Layer':
                 ctr_xyz = encoder_xyz[self.ctr_idx_list[i]] if self.ctr_idx_list[i] != -1 else None
